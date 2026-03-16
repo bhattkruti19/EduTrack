@@ -1,35 +1,40 @@
 from flask import Blueprint, jsonify, request
+from pymongo.errors import DuplicateKeyError
 
-from models import db
-from models.attendance import Attendance
-from models.student import Student
+from models.attendance_model import (
+    calculate_attendance_percentage,
+    create_attendance,
+    get_attendance_by_id,
+    get_attendance_by_student_id,
+    update_attendance,
+)
+from models.student_model import get_student_by_identifier
 
 attendance_bp = Blueprint("attendance", __name__, url_prefix="/api/attendance")
 
 
-def _calculate_attendance_percentage(attended_classes, total_classes):
-    if total_classes <= 0:
-        return 0.0
-    return round((attended_classes / total_classes) * 100, 2)
-
-
-@attendance_bp.route("/<int:student_id>", methods=["GET"])
-def get_attendance_by_student(student_id):
-    """API: Get all subject-wise attendance records for a student."""
+def _to_int(value, default=0):
     try:
-        student = Student.query.get(student_id)
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# Return all attendance records for the given student_id.
+@attendance_bp.route("/<string:student_id>", methods=["GET"])
+def get_attendance(student_id):
+    try:
+        student = get_student_by_identifier(student_id)
         if not student:
             return jsonify({"error": "Student not found"}), 404
-
-        records = Attendance.query.filter_by(student_id=student_id).all()
-        return jsonify([record.to_dict() for record in records])
+        return jsonify(get_attendance_by_student_id(student["student_id"]))
     except Exception as error:
         return jsonify({"error": f"Failed to fetch attendance: {str(error)}"}), 500
 
 
+# Create a new attendance record and calculate attendance percentage automatically.
 @attendance_bp.route("", methods=["POST"])
-def create_attendance_record():
-    """API: Create a subject-wise attendance record for a student."""
+def create_attendance_route():
     try:
         data = request.get_json(silent=True) or {}
         required_fields = ["student_id", "subject", "attended_classes", "total_classes"]
@@ -37,54 +42,57 @@ def create_attendance_record():
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-        student = Student.query.get(data.get("student_id"))
+        student = get_student_by_identifier(str(data.get("student_id", "")).strip())
         if not student:
             return jsonify({"error": "Student not found"}), 404
 
-        attended_classes = int(data.get("attended_classes", 0))
-        total_classes = int(data.get("total_classes", 0))
-        attendance_percentage = _calculate_attendance_percentage(attended_classes, total_classes)
-
-        record = Attendance(
-            student_id=student.id,
-            subject=str(data.get("subject", "")).strip(),
-            attended_classes=attended_classes,
-            total_classes=total_classes,
-            attendance_percentage=attendance_percentage,
-        )
-        db.session.add(record)
-        db.session.commit()
-
-        return jsonify({"message": "Attendance record created", "attendance": record.to_dict()}), 201
+        attended_classes = _to_int(data.get("attended_classes"), 0)
+        total_classes = _to_int(data.get("total_classes"), 0)
+        payload = {
+            "student_id": student["student_id"],
+            "subject": str(data.get("subject", "")).strip(),
+            "attended_classes": attended_classes,
+            "total_classes": total_classes,
+            "attendance_percentage": calculate_attendance_percentage(attended_classes, total_classes),
+        }
+        attendance = create_attendance(payload)
+        return jsonify({"message": "Attendance created successfully", "attendance": attendance}), 201
+    except DuplicateKeyError:
+        return jsonify({"error": "Attendance already exists for this student and subject"}), 409
     except Exception as error:
-        db.session.rollback()
-        return jsonify({"error": f"Failed to create attendance record: {str(error)}"}), 500
+        return jsonify({"error": f"Failed to create attendance: {str(error)}"}), 500
 
 
-@attendance_bp.route("/<int:attendance_id>", methods=["PUT"])
-def update_attendance_record(attendance_id):
-    """API: Update a subject-wise attendance record by attendance id."""
+# Update an attendance record by its MongoDB ObjectId.
+@attendance_bp.route("/<string:attendance_id>", methods=["PUT"])
+def update_attendance_route(attendance_id):
     try:
-        record = Attendance.query.get(attendance_id)
-        if not record:
+        existing_record = get_attendance_by_id(attendance_id)
+        if not existing_record:
             return jsonify({"error": "Attendance record not found"}), 404
 
         data = request.get_json(silent=True) or {}
+        payload = {}
 
+        if "student_id" in data:
+            student = get_student_by_identifier(str(data.get("student_id", "")).strip())
+            if not student:
+                return jsonify({"error": "Student not found"}), 404
+            payload["student_id"] = student["student_id"]
         if "subject" in data:
-            record.subject = str(data.get("subject", "")).strip()
+            payload["subject"] = str(data.get("subject", "")).strip()
         if "attended_classes" in data:
-            record.attended_classes = int(data.get("attended_classes", 0))
+            payload["attended_classes"] = _to_int(data.get("attended_classes"), 0)
         if "total_classes" in data:
-            record.total_classes = int(data.get("total_classes", 0))
+            payload["total_classes"] = _to_int(data.get("total_classes"), 0)
 
-        record.attendance_percentage = _calculate_attendance_percentage(
-            record.attended_classes,
-            record.total_classes,
-        )
+        attended_classes = payload.get("attended_classes", existing_record.get("attended_classes", 0))
+        total_classes = payload.get("total_classes", existing_record.get("total_classes", 0))
+        payload["attendance_percentage"] = calculate_attendance_percentage(attended_classes, total_classes)
 
-        db.session.commit()
-        return jsonify({"message": "Attendance record updated", "attendance": record.to_dict()})
+        attendance = update_attendance(attendance_id, payload)
+        return jsonify({"message": "Attendance updated successfully", "attendance": attendance})
+    except DuplicateKeyError:
+        return jsonify({"error": "Attendance already exists for this student and subject"}), 409
     except Exception as error:
-        db.session.rollback()
-        return jsonify({"error": f"Failed to update attendance record: {str(error)}"}), 500
+        return jsonify({"error": f"Failed to update attendance: {str(error)}"}), 500

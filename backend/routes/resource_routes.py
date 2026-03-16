@@ -1,44 +1,40 @@
 from flask import Blueprint, jsonify, request
 
-from models import db
-from models.resource import Resource
+from models.resource_model import create_resource, get_all_resources
 
 resource_bp = Blueprint("resources", __name__, url_prefix="/api/resources")
 
 
+# Return all resources that can be displayed to the frontend.
 @resource_bp.route("", methods=["GET"])
 def get_resources():
-    """API: Get all academic resources."""
     try:
-        resources = Resource.query.order_by(Resource.id.desc()).all()
-        return jsonify([resource.to_dict() for resource in resources])
+        return jsonify(get_all_resources())
     except Exception as error:
         return jsonify({"error": f"Failed to fetch resources: {str(error)}"}), 500
 
 
+# Create a new learning resource with title, author, category and link.
 @resource_bp.route("", methods=["POST"])
-def create_resource():
-    """API: Create a new academic resource."""
+def create_resource_route():
     try:
         data = request.get_json(silent=True) or {}
         title = str(data.get("title", "")).strip()
-        link = str(data.get("link", "")).strip()
         author = str(data.get("author", "")).strip() or None
         category = str(data.get("category", "")).strip() or None
+        link = str(data.get("link", "")).strip()
 
         if not title or not link:
             return jsonify({"error": "title and link are required"}), 400
 
-        resource = Resource(
-            title=title,
-            author=author,
-            link=link,
-            category=category,
+        resource = create_resource(
+            {
+                "title": title,
+                "author": author,
+                "category": category,
+                "link": link,
+            }
         )
-        db.session.add(resource)
-        db.session.commit()
-
-        return jsonify({"message": "Resource created", "resource": resource.to_dict()}), 201
+        return jsonify({"message": "Resource created successfully", "resource": resource}), 201
     except Exception as error:
-        db.session.rollback()
         return jsonify({"error": f"Failed to create resource: {str(error)}"}), 500

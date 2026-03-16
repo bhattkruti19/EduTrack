@@ -1,13 +1,16 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
 
 from config import Config
-from models import db
+from database.db import init_db
+from models.attendance_model import ensure_attendance_indexes
+from models.grade_model import ensure_grade_indexes
+from models.student_model import ensure_student_indexes
+from models.user_model import ensure_user_indexes
 from routes.analytics_routes import analytics_bp
 from routes.attendance_routes import attendance_bp
 from routes.auth_routes import auth_bp
-from routes.calendar_routes import calendar_bp
+from routes.event_routes import event_bp
 from routes.grade_routes import grade_bp
 from routes.prediction_routes import prediction_bp
 from routes.resource_routes import resource_bp
@@ -22,14 +25,14 @@ def create_app():
     if isinstance(cors_origins, str) and cors_origins != "*":
         cors_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
 
-    CORS(
-        app,
-        resources={r"/api/*": {"origins": cors_origins}},
-        supports_credentials=True,
-    )
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}}, supports_credentials=True)
 
-    db.init_app(app)
-    JWTManager(app)
+    init_db(app)
+    with app.app_context():
+        ensure_user_indexes()
+        ensure_student_indexes()
+        ensure_attendance_indexes()
+        ensure_grade_indexes()
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(student_bp)
@@ -37,7 +40,7 @@ def create_app():
     app.register_blueprint(grade_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(prediction_bp)
-    app.register_blueprint(calendar_bp)
+    app.register_blueprint(event_bp)
     app.register_blueprint(resource_bp)
 
     @app.get("/")
@@ -46,7 +49,7 @@ def create_app():
             {
                 "message": "EduTrack backend is running",
                 "api_base": "/api",
-                "docs_hint": "Use /api to view available endpoint groups",
+                "database": "MongoDB",
             }
         )
 
@@ -62,7 +65,7 @@ def create_app():
                     "grades": "/api/grades",
                     "analytics": "/api/analytics",
                     "prediction": "/api/predict-cgpa",
-                    "calendar": "/api/calendar",
+                    "events": "/api/events",
                     "resources": "/api/resources",
                 },
             }
@@ -76,9 +79,6 @@ def create_app():
     def handle_internal_error(_error):
         return jsonify({"error": "Internal server error"}), 500
 
-    with app.app_context():
-        db.create_all()
-
     return app
 
 
@@ -86,4 +86,4 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=app.config["DEBUG"])

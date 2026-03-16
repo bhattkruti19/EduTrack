@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
+from pymongo.errors import DuplicateKeyError
 
-from models import db
-from models.student import Student
+from models.student_model import create_student, delete_student, get_all_students, get_student_by_id, update_student
 
 student_bp = Blueprint("students", __name__, url_prefix="/api/students")
 
@@ -13,103 +13,101 @@ def _to_float(value, default=0.0):
         return default
 
 
+# Return all student documents for the frontend dashboard.
 @student_bp.route("", methods=["GET"])
 def get_students():
-    """API: Get all student profiles."""
     try:
-        students = Student.query.order_by(Student.id.desc()).all()
-        return jsonify([student.to_dict() for student in students])
+        return jsonify(get_all_students())
     except Exception as error:
         return jsonify({"error": f"Failed to fetch students: {str(error)}"}), 500
 
 
-@student_bp.route("/<int:student_id>", methods=["GET"])
+# Return one student document by MongoDB ObjectId.
+@student_bp.route("/<string:student_id>", methods=["GET"])
 def get_student(student_id):
-    """API: Get one student profile by student id."""
     try:
-        student = Student.query.get(student_id)
+        student = get_student_by_id(student_id)
         if not student:
             return jsonify({"error": "Student not found"}), 404
-        return jsonify(student.to_dict())
+        return jsonify(student)
     except Exception as error:
         return jsonify({"error": f"Failed to fetch student: {str(error)}"}), 500
 
 
+# Create a new student profile document.
 @student_bp.route("", methods=["POST"])
-def create_student():
-    """API: Create a new student profile."""
+def create_student_route():
     try:
         data = request.get_json(silent=True) or {}
-        required_fields = ["name", "enrollment_id", "branch", "semester", "year", "email"]
+        required_fields = [
+            "student_id",
+            "name",
+            "enrollment_id",
+            "branch",
+            "year",
+            "semester",
+            "email",
+        ]
         missing = [field for field in required_fields if not data.get(field)]
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-        if Student.query.filter_by(enrollment_id=data["enrollment_id"].strip()).first():
-            return jsonify({"error": "Enrollment ID already exists"}), 409
+        payload = {
+            "student_id": str(data.get("student_id", "")).strip(),
+            "name": str(data.get("name", "")).strip(),
+            "enrollment_id": str(data.get("enrollment_id", "")).strip(),
+            "branch": str(data.get("branch", "")).strip(),
+            "year": str(data.get("year", "")).strip(),
+            "semester": str(data.get("semester", "")).strip(),
+            "email": str(data.get("email", "")).strip().lower(),
+            "cgpa": _to_float(data.get("cgpa"), 0.0),
+            "attendance_percentage": _to_float(data.get("attendance_percentage"), 0.0),
+        }
 
-        if Student.query.filter_by(email=data["email"].strip().lower()).first():
-            return jsonify({"error": "Student email already exists"}), 409
-
-        student = Student(
-            name=data["name"].strip(),
-            enrollment_id=data["enrollment_id"].strip(),
-            branch=data["branch"].strip(),
-            semester=data["semester"].strip(),
-            year=data["year"].strip(),
-            email=data["email"].strip().lower(),
-            attendance_percentage=_to_float(data.get("attendance_percentage"), 0.0),
-            cgpa=_to_float(data.get("cgpa"), 0.0),
-        )
-
-        db.session.add(student)
-        db.session.commit()
-        return jsonify({"message": "Student created", "student": student.to_dict()}), 201
+        student = create_student(payload)
+        return jsonify({"message": "Student created successfully", "student": student}), 201
+    except DuplicateKeyError:
+        return jsonify({"error": "student_id, enrollment_id or email already exists"}), 409
     except Exception as error:
-        db.session.rollback()
         return jsonify({"error": f"Failed to create student: {str(error)}"}), 500
 
 
-@student_bp.route("/<int:student_id>", methods=["PUT"])
-def update_student(student_id):
-    """API: Update an existing student profile by id."""
+# Update an existing student profile using its MongoDB ObjectId.
+@student_bp.route("/<string:student_id>", methods=["PUT"])
+def update_student_route(student_id):
     try:
-        student = Student.query.get(student_id)
-        if not student:
+        existing_student = get_student_by_id(student_id)
+        if not existing_student:
             return jsonify({"error": "Student not found"}), 404
 
         data = request.get_json(silent=True) or {}
-
-        for field in ["name", "enrollment_id", "branch", "semester", "year", "email"]:
+        payload = {}
+        for field in ["student_id", "name", "enrollment_id", "branch", "year", "semester", "email"]:
             if field in data and data[field] is not None:
                 value = str(data[field]).strip()
-                if field == "email":
-                    value = value.lower()
-                setattr(student, field, value)
+                payload[field] = value.lower() if field == "email" else value
 
-        if "attendance_percentage" in data:
-            student.attendance_percentage = _to_float(data.get("attendance_percentage"), 0.0)
         if "cgpa" in data:
-            student.cgpa = _to_float(data.get("cgpa"), 0.0)
+            payload["cgpa"] = _to_float(data.get("cgpa"), existing_student.get("cgpa", 0.0))
+        if "attendance_percentage" in data:
+            payload["attendance_percentage"] = _to_float(
+                data.get("attendance_percentage"), existing_student.get("attendance_percentage", 0.0)
+            )
 
-        db.session.commit()
-        return jsonify({"message": "Student updated", "student": student.to_dict()})
+        student = update_student(student_id, payload)
+        return jsonify({"message": "Student updated successfully", "student": student})
+    except DuplicateKeyError:
+        return jsonify({"error": "student_id, enrollment_id or email already exists"}), 409
     except Exception as error:
-        db.session.rollback()
         return jsonify({"error": f"Failed to update student: {str(error)}"}), 500
 
 
-@student_bp.route("/<int:student_id>", methods=["DELETE"])
-def delete_student(student_id):
-    """API: Delete a student profile by id."""
+# Delete a student profile using its MongoDB ObjectId.
+@student_bp.route("/<string:student_id>", methods=["DELETE"])
+def delete_student_route(student_id):
     try:
-        student = Student.query.get(student_id)
-        if not student:
+        if not delete_student(student_id):
             return jsonify({"error": "Student not found"}), 404
-
-        db.session.delete(student)
-        db.session.commit()
         return jsonify({"message": "Student deleted successfully"})
     except Exception as error:
-        db.session.rollback()
         return jsonify({"error": f"Failed to delete student: {str(error)}"}), 500

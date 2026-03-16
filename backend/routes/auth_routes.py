@@ -1,97 +1,139 @@
-import bcrypt
-from flask import Blueprint, jsonify, request
-from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 
-from models import db
-from models.user import User
+import bcrypt
+import jwt
+from flask import Blueprint, current_app, g, jsonify, request
+
+from models.user_model import create_user, find_user_by_email, find_user_by_id, find_user_document_by_id
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 
+def _generate_token(user_document):
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        hours=current_app.config["JWT_ACCESS_TOKEN_EXPIRES_HOURS"]
+    )
+    payload = {
+        "sub": str(user_document["_id"]),
+        "email": user_document.get("email"),
+        "role": user_document.get("role"),
+        "exp": expires_at,
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(
+        payload,
+        current_app.config["JWT_SECRET_KEY"],
+        algorithm=current_app.config["JWT_ALGORITHM"],
+    )
+
+
+def _get_bearer_token():
+    authorization_header = request.headers.get("Authorization", "")
+    parts = authorization_header.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
+
+
+def token_required(route_function):
+    @wraps(route_function)
+    def wrapper(*args, **kwargs):
+        token = _get_bearer_token()
+        if not token:
+            return jsonify({"error": "Authorization token is required"}), 401
+
+        try:
+            payload = jwt.decode(
+                token,
+                current_app.config["JWT_SECRET_KEY"],
+                algorithms=[current_app.config["JWT_ALGORITHM"]],
+            )
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Invalid token"}), 401
+
+        user_document = find_user_document_by_id(payload.get("sub"))
+        if not user_document:
+            return jsonify({"error": "User not found"}), 404
+
+        g.current_user = {
+            "id": str(user_document["_id"]),
+            "name": user_document.get("name"),
+            "email": user_document.get("email"),
+            "role": user_document.get("role"),
+        }
+        return route_function(*args, **kwargs)
+
+    return wrapper
+
+
+# Register a new user and store the password securely with bcrypt.
 @auth_bp.route("/register", methods=["POST"])
 def register_user():
-    """API: Register a new student/faculty user with bcrypt-hashed password."""
     try:
         data = request.get_json(silent=True) or {}
-        name = data.get("name", "").strip()
-        email = data.get("email", "").strip().lower()
-        password = data.get("password", "")
-        role = data.get("role", "").strip().lower()
+        name = str(data.get("name", "")).strip()
+        email = str(data.get("email", "")).strip().lower()
+        password = str(data.get("password", "")).strip()
+        role = str(data.get("role", "")).strip().lower()
 
         if not all([name, email, password, role]):
             return jsonify({"error": "name, email, password and role are required"}), 400
 
-        if role not in {"student", "faculty"}:
-            return jsonify({"error": "role must be either student or faculty"}), 400
+        if role not in {"admin", "faculty", "student"}:
+            return jsonify({"error": "role must be admin, faculty or student"}), 400
 
-        existing_user = User.query.filter_by(email=email).first()
-        if existing_user:
+        if find_user_by_email(email):
             return jsonify({"error": "User already exists with this email"}), 409
 
         password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-        new_user = User(
-            name=name,
-            email=email,
-            password_hash=password_hash,
-            role=role,
-        )
-        db.session.add(new_user)
-        db.session.commit()
-
-        return jsonify({"message": "User registered successfully", "user": new_user.to_dict()}), 201
+        user = create_user(name=name, email=email, password_hash=password_hash, role=role)
+        return jsonify({"message": "User registered successfully", "user": user}), 201
     except Exception as error:
-        db.session.rollback()
         return jsonify({"error": f"Failed to register user: {str(error)}"}), 500
 
 
+# Authenticate a user and return a JWT token for frontend requests.
 @auth_bp.route("/login", methods=["POST"])
 def login_user():
-    """API: Login a user and return a JWT access token."""
     try:
         data = request.get_json(silent=True) or {}
-        email = data.get("email", "").strip().lower()
-        password = data.get("password", "")
+        email = str(data.get("email", "")).strip().lower()
+        password = str(data.get("password", ""))
 
         if not email or not password:
             return jsonify({"error": "email and password are required"}), 400
 
-        user = User.query.filter_by(email=email).first()
-        if not user:
+        user_document = find_user_by_email(email)
+        if not user_document:
             return jsonify({"error": "Invalid email or password"}), 401
 
-        is_valid_password = bcrypt.checkpw(
-            password.encode("utf-8"), user.password_hash.encode("utf-8")
+        password_matches = bcrypt.checkpw(
+            password.encode("utf-8"), user_document["password"].encode("utf-8")
         )
-        if not is_valid_password:
+        if not password_matches:
             return jsonify({"error": "Invalid email or password"}), 401
 
-        access_token = create_access_token(
-            identity=str(user.id),
-            additional_claims={"role": user.role, "email": user.email},
-        )
-
+        token = _generate_token(user_document)
         return jsonify(
             {
                 "message": "Login successful",
-                "access_token": access_token,
-                "user": user.to_dict(),
+                "token": token,
+                "access_token": token,
+                "user": find_user_by_id(user_document["_id"]),
             }
         )
     except Exception as error:
         return jsonify({"error": f"Failed to login: {str(error)}"}), 500
 
 
+# Return the profile details for the currently authenticated user.
 @auth_bp.route("/profile", methods=["GET"])
-@jwt_required()
+@token_required
 def get_profile():
-    """API: Get profile details of the authenticated user from JWT identity."""
     try:
-        user_id = get_jwt_identity()
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        return jsonify({"user": user.to_dict()})
+        return jsonify({"user": g.current_user})
     except Exception as error:
         return jsonify({"error": f"Failed to fetch profile: {str(error)}"}), 500

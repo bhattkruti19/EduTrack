@@ -1,43 +1,34 @@
 from flask import Blueprint, jsonify, request
+from pymongo.errors import DuplicateKeyError
 
-from models import db
-from models.grades import Grade
-from models.student import Student
+from models.grade_model import calculate_grade, create_grade, get_grade_by_id, get_grades_by_student_id, update_grade
+from models.student_model import get_student_by_identifier
 
 grade_bp = Blueprint("grades", __name__, url_prefix="/api/grades")
 
 
-def _calculate_grade(total_marks):
-    if total_marks >= 85:
-        return "A+"
-    if total_marks >= 75:
-        return "A"
-    if total_marks >= 65:
-        return "B"
-    if total_marks >= 55:
-        return "C"
-    if total_marks >= 45:
-        return "D"
-    return "F"
-
-
-@grade_bp.route("/<int:student_id>", methods=["GET"])
-def get_grades_by_student(student_id):
-    """API: Get all subject grade records for a student."""
+def _to_float(value, default=0.0):
     try:
-        student = Student.query.get(student_id)
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# Return all grade records for the given student_id.
+@grade_bp.route("/<string:student_id>", methods=["GET"])
+def get_grades(student_id):
+    try:
+        student = get_student_by_identifier(student_id)
         if not student:
             return jsonify({"error": "Student not found"}), 404
-
-        grades = Grade.query.filter_by(student_id=student_id).all()
-        return jsonify([grade.to_dict() for grade in grades])
+        return jsonify(get_grades_by_student_id(student["student_id"]))
     except Exception as error:
         return jsonify({"error": f"Failed to fetch grades: {str(error)}"}), 500
 
 
+# Create a grade record and calculate total marks and grade value.
 @grade_bp.route("", methods=["POST"])
-def create_grade_record():
-    """API: Create a subject grade record for a student."""
+def create_grade_route():
     try:
         data = request.get_json(silent=True) or {}
         required_fields = ["student_id", "subject", "internal_marks", "external_marks"]
@@ -45,57 +36,78 @@ def create_grade_record():
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-        student = Student.query.get(data.get("student_id"))
+        student = get_student_by_identifier(str(data.get("student_id", "")).strip())
         if not student:
             return jsonify({"error": "Student not found"}), 404
 
-        internal_marks = float(data.get("internal_marks", 0))
-        external_marks = float(data.get("external_marks", 0))
-        total_marks = float(data.get("total_marks", internal_marks + external_marks))
-        grade = str(data.get("grade") or _calculate_grade(total_marks)).strip()
-
-        grade_record = Grade(
-            student_id=student.id,
-            subject=str(data.get("subject", "")).strip(),
-            internal_marks=internal_marks,
-            external_marks=external_marks,
-            total_marks=total_marks,
-            grade=grade,
+        internal_marks = _to_float(data.get("internal_marks"), 0.0)
+        external_marks = _to_float(data.get("external_marks"), 0.0)
+        assignment_score = _to_float(data.get("assignment_score"), 0.0)
+        total_marks = _to_float(
+            data.get("total_marks"),
+            internal_marks + external_marks + assignment_score,
         )
+        grade_value = str(data.get("grade") or calculate_grade(total_marks)).strip()
 
-        db.session.add(grade_record)
-        db.session.commit()
-        return jsonify({"message": "Grade record created", "grade": grade_record.to_dict()}), 201
+        payload = {
+            "student_id": student["student_id"],
+            "subject": str(data.get("subject", "")).strip(),
+            "internal_marks": internal_marks,
+            "external_marks": external_marks,
+            "assignment_score": assignment_score,
+            "total_marks": total_marks,
+            "grade": grade_value,
+        }
+        grade = create_grade(payload)
+        return jsonify({"message": "Grade created successfully", "grade": grade}), 201
+    except DuplicateKeyError:
+        return jsonify({"error": "Grade already exists for this student and subject"}), 409
     except Exception as error:
-        db.session.rollback()
-        return jsonify({"error": f"Failed to create grade record: {str(error)}"}), 500
+        return jsonify({"error": f"Failed to create grade: {str(error)}"}), 500
 
 
-@grade_bp.route("/<int:grade_id>", methods=["PUT"])
-def update_grade_record(grade_id):
-    """API: Update a grade record by grade id."""
+# Update an existing grade record by its MongoDB ObjectId.
+@grade_bp.route("/<string:grade_id>", methods=["PUT"])
+def update_grade_route(grade_id):
     try:
-        grade_record = Grade.query.get(grade_id)
-        if not grade_record:
+        existing_record = get_grade_by_id(grade_id)
+        if not existing_record:
             return jsonify({"error": "Grade record not found"}), 404
 
         data = request.get_json(silent=True) or {}
+        payload = {}
+
+        if "student_id" in data:
+            student = get_student_by_identifier(str(data.get("student_id", "")).strip())
+            if not student:
+                return jsonify({"error": "Student not found"}), 404
+            payload["student_id"] = student["student_id"]
         if "subject" in data:
-            grade_record.subject = str(data.get("subject", "")).strip()
+            payload["subject"] = str(data.get("subject", "")).strip()
         if "internal_marks" in data:
-            grade_record.internal_marks = float(data.get("internal_marks", 0))
+            payload["internal_marks"] = _to_float(data.get("internal_marks"), 0.0)
         if "external_marks" in data:
-            grade_record.external_marks = float(data.get("external_marks", 0))
+            payload["external_marks"] = _to_float(data.get("external_marks"), 0.0)
+        if "assignment_score" in data:
+            payload["assignment_score"] = _to_float(data.get("assignment_score"), 0.0)
 
         if "total_marks" in data:
-            grade_record.total_marks = float(data.get("total_marks", 0))
+            payload["total_marks"] = _to_float(data.get("total_marks"), 0.0)
         else:
-            grade_record.total_marks = grade_record.internal_marks + grade_record.external_marks
+            payload["total_marks"] = (
+                payload.get("internal_marks", existing_record.get("internal_marks", 0.0))
+                + payload.get("external_marks", existing_record.get("external_marks", 0.0))
+                + payload.get("assignment_score", existing_record.get("assignment_score", 0.0))
+            )
 
-        grade_record.grade = str(data.get("grade") or _calculate_grade(grade_record.total_marks)).strip()
+        if "grade" in data:
+            payload["grade"] = str(data.get("grade", "")).strip()
+        else:
+            payload["grade"] = calculate_grade(payload["total_marks"])
 
-        db.session.commit()
-        return jsonify({"message": "Grade record updated", "grade": grade_record.to_dict()})
+        grade = update_grade(grade_id, payload)
+        return jsonify({"message": "Grade updated successfully", "grade": grade})
+    except DuplicateKeyError:
+        return jsonify({"error": "Grade already exists for this student and subject"}), 409
     except Exception as error:
-        db.session.rollback()
-        return jsonify({"error": f"Failed to update grade record: {str(error)}"}), 500
+        return jsonify({"error": f"Failed to update grade: {str(error)}"}), 500
