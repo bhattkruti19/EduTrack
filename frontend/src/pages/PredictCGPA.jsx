@@ -1,72 +1,134 @@
 import { useMemo, useState } from 'react'
 import AlertBanner from '../components/AlertBanner'
 
-const subjects = ['Data Structures', 'DBMS', 'Operating Systems', 'Networks', 'Mathematics']
-
 function PredictCGPA() {
-  const [marks, setMarks] = useState([0, 0, 0, 0, 0])
+  const [subjects, setSubjects] = useState([])
   const [predicted, setPredicted] = useState(null)
 
-  const isValid = useMemo(() => marks.every((mark) => mark >= 0 && mark <= 100), [marks])
+  const isValid = useMemo(
+    () => subjects.length > 0,
+    [subjects]
+  )
 
-  const updateMark = (index, value) => {
-    const nextMarks = [...marks]
-    nextMarks[index] = Number(value)
-    setMarks(nextMarks)
+  const addSubject = () => {
+    setSubjects((prev) => [...prev, { id: Date.now(), name: '', gpa: 0, credit: 0 }])
+    setPredicted(null)
   }
 
-  const handlePredict = () => {
+  const removeSubject = (id) => {
+    setSubjects((prev) => prev.filter((s) => s.id !== id))
+    setPredicted(null)
+  }
+
+  const updateSubject = (id, field, value) => {
+    setSubjects((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, [field]: field === 'name' ? value : Number(value) } : s))
+    )
+    setPredicted(null)
+  }
+
+  const handleCalculate = () => {
     if (!isValid) return
-    const average = marks.reduce((sum, mark) => sum + mark, 0) / marks.length
-    const cgpa = (average / 9.5).toFixed(2)
+    const totalWeightedGPA = subjects.reduce((sum, s) => sum + s.gpa * s.credit, 0)
+    const totalCredits = subjects.reduce((sum, s) => sum + s.credit, 0)
+    if (totalCredits === 0) {
+      setPredicted('--')
+      return
+    }
+    const cgpa = (totalWeightedGPA / totalCredits).toFixed(2)
     setPredicted(cgpa)
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-edu-navy">Predict CGPA</h1>
-        <p className="text-sm text-edu-blue">Enter expected marks to estimate your CGPA.</p>
-      </div>
-
       <AlertBanner
         tone="info"
-        title="Prediction Alert"
-        message="CGPA prediction is an estimate based on entered marks. Use realistic values for better guidance."
+        title="CGPA Prediction"
+        message="Enter expected GPA (0-4) and credit hours for each subject, then click Calculate to get your predicted CGPA."
       />
 
       <section className="rounded-soft bg-white p-5 shadow-soft">
-        <h2 className="mb-4 text-lg font-semibold text-edu-navy">Marks Input</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {subjects.map((subject, index) => (
-            <label key={subject} className="space-y-1">
-              <span className="text-sm font-medium text-edu-navy">{subject}</span>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={marks[index]}
-                onChange={(event) => updateMark(index, event.target.value)}
-                className="w-full rounded-lg border border-edu-blue/20 px-3 py-2 text-sm outline-none transition focus:border-edu-teal focus:ring-2 focus:ring-edu-teal/25"
-              />
-            </label>
-          ))}
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-edu-navy">Add Subjects</h2>
+          <button
+            type="button"
+            onClick={addSubject}
+            className="rounded-lg bg-edu-teal px-3 py-1.5 text-sm font-medium text-white transition hover:bg-edu-blue"
+          >
+            + Add Subject
+          </button>
         </div>
+
+        {subjects.length === 0 ? (
+          <p className="text-sm text-edu-navy/50">No subjects added yet. Click "+ Add Subject" to begin.</p>
+        ) : (
+          <div className="space-y-3">
+            {subjects.map((subject) => (
+              <div key={subject.id} className="grid gap-3 rounded-lg border border-edu-blue/20 bg-edu-bg p-4 sm:grid-cols-4 sm:items-end">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-edu-navy/70">Subject Name</span>
+                  <input
+                    type="text"
+                    value={subject.name}
+                    onChange={(e) => updateSubject(subject.id, 'name', e.target.value)}
+                    placeholder="e.g. Mathematics"
+                    className="rounded-lg border border-edu-blue/20 bg-white px-3 py-2 text-sm outline-none transition focus:border-edu-teal focus:ring-2 focus:ring-edu-teal/25"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-edu-navy/70">Expected GPA (0–4)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="4"
+                    step="0.1"
+                    value={subject.gpa}
+                    onChange={(e) => updateSubject(subject.id, 'gpa', e.target.value)}
+                    placeholder="e.g. 3.5"
+                    className="rounded-lg border border-edu-blue/20 bg-white px-3 py-2 text-sm outline-none transition focus:border-edu-teal focus:ring-2 focus:ring-edu-teal/25"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-edu-navy/70">Credit Hours</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={subject.credit}
+                    onChange={(e) => updateSubject(subject.id, 'credit', e.target.value)}
+                    placeholder="e.g. 3"
+                    className="rounded-lg border border-edu-blue/20 bg-white px-3 py-2 text-sm outline-none transition focus:border-edu-teal focus:ring-2 focus:ring-edu-teal/25"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => removeSubject(subject.id)}
+                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-100"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <button
           type="button"
-          onClick={handlePredict}
+          onClick={handleCalculate}
           disabled={!isValid}
-          className="mt-5 rounded-lg bg-edu-teal px-5 py-2.5 font-medium text-white transition hover:bg-edu-blue disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-5 rounded-lg bg-edu-navy px-5 py-2.5 font-medium text-white transition hover:bg-edu-blue disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Predict CGPA
+          Calculate CGPA
         </button>
       </section>
 
       <section className="rounded-soft bg-white p-5 shadow-soft">
-        <h2 className="text-lg font-semibold text-edu-navy">Prediction Result</h2>
-        <p className="mt-2 text-sm text-edu-blue">Predicted CGPA based on entered marks:</p>
-        <div className="mt-3 inline-flex items-center rounded-xl bg-edu-mint/40 px-4 py-2">
+        <h2 className="text-lg font-semibold text-edu-navy">Predicted CGPA</h2>
+        <p className="mt-2 text-sm text-edu-blue">Your weighted CGPA prediction:</p>
+        <div className="mt-3 inline-flex items-center rounded-xl bg-edu-blue/12 px-4 py-2">
           <span className="text-2xl font-bold text-edu-navy">{predicted ?? '--'}</span>
         </div>
       </section>

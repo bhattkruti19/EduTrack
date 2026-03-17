@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import BrandLogo from './BrandLogo'
 
 function Navbar() {
   const navigate = useNavigate()
@@ -76,9 +77,12 @@ function Navbar() {
   return (
     <header className="sticky top-0 z-20 border-b border-edu-blue/15 bg-white/80 px-4 py-3 backdrop-blur-md sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-edu-navy">EduTrack Dashboard</h2>
-          <p className="text-xs text-edu-blue">Academic Performance & Engagement</p>
+        <div className="flex items-center gap-4">
+          <BrandLogo imageClassName="h-12 w-auto sm:h-14" priority />
+          <div>
+            <h2 className="text-lg font-semibold text-edu-navy">EduTrack</h2>
+            <p className="text-xs text-edu-blue/85">Academic Performance & Engagement</p>
+          </div>
         </div>
 
         <div className="relative">

@@ -82,8 +82,8 @@ def register_user():
         if not all([name, email, password, role]):
             return jsonify({"error": "name, email, password and role are required"}), 400
 
-        if role not in {"admin", "faculty", "student"}:
-            return jsonify({"error": "role must be admin, faculty or student"}), 400
+        if role not in {"admin", "faculty", "student", "counsellor"}:
+            return jsonify({"error": "role must be admin, faculty, student or counsellor"}), 400
 
         if find_user_by_email(email):
             return jsonify({"error": "User already exists with this email"}), 409

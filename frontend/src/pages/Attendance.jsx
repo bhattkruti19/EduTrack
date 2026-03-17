@@ -1,5 +1,4 @@
 import AttendanceTable from '../components/AttendanceTable'
-import AlertBanner from '../components/AlertBanner'
 
 const attendanceData = [
   { subject: 'Data Structures', attended: 32, total: 38, percentage: 84 },
@@ -17,28 +16,13 @@ function Attendance() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-edu-navy">Attendance</h1>
-        <p className="text-sm text-edu-blue">Subject-wise attendance tracking with percentage indicator.</p>
-      </div>
-
       <div className="rounded-soft bg-white p-4 shadow-soft">
         <p className="text-sm text-edu-blue">Overall Percentage</p>
         <div className="mt-2 flex items-end gap-2">
           <h2 className="text-3xl font-bold text-edu-navy">{overallAttendance}%</h2>
-          <span className="mb-1 rounded-full bg-edu-mint/40 px-2 py-1 text-xs text-edu-navy">Good Standing</span>
+          <span className="mb-1 rounded-full bg-edu-blue/12 px-2 py-1 text-xs text-edu-navy">Good Standing</span>
         </div>
       </div>
-
-      <AlertBanner
-        tone={attendanceTone}
-        title="Attendance Alert"
-        message={
-          overallAttendance >= 85
-            ? 'Great consistency. Keep maintaining your current attendance momentum.'
-            : 'Attendance is close to minimum threshold. Prioritize upcoming lectures to avoid shortage.'
-        }
-      />
 
       <AttendanceTable data={attendanceData} />
     </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import BrandLogo from '../components/BrandLogo'
 
 function SignUpPage({ role = 'student' }) {
   const navigate = useNavigate()
@@ -7,17 +8,21 @@ function SignUpPage({ role = 'student' }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const roleLabel = role === 'faculty' ? 'Faculty' : 'Student'
+  const roleLabel = role === 'faculty' ? 'Faculty' : role === 'counsellor' ? 'Counsellor' : 'Student'
 
   const handleSubmit = (event) => {
     event.preventDefault()
     if (!fullName || !email || !password || !confirmPassword) return
+    if (role === 'counsellor') {
+      localStorage.setItem('edutrack_counsellor_profile', JSON.stringify({ name: fullName }))
+    }
     navigate(`/${role}/login`)
   }
 
   return (
     <div className="mx-auto max-w-md py-4 sm:py-10">
       <section className="rounded-soft bg-white p-6 shadow-soft sm:p-7">
+        <BrandLogo className="mx-auto" imageClassName="mx-auto h-24 w-auto" priority />
         <h1 className="text-2xl font-bold text-edu-navy">{roleLabel} Sign Up</h1>
         <p className="mt-1 text-sm text-edu-blue">Create a demo account (no real authentication).</p>
 

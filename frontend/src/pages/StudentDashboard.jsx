@@ -1,4 +1,4 @@
-import AlertBanner from '../components/AlertBanner'
+import { useMemo } from 'react'
 
 const profileDetails = [
   { label: 'Name', value: 'Kruti Patel' },
@@ -12,12 +12,26 @@ const profileDetails = [
 const subjects = ['Data Structures', 'DBMS', 'Operating Systems', 'Machine Learning', 'Cloud Computing']
 
 function StudentDashboard() {
+  const studentName = useMemo(() => {
+    try {
+      const storedProfile = localStorage.getItem('edutrack_student_profile')
+      if (storedProfile) {
+        const parsed = JSON.parse(storedProfile)
+        if (parsed?.name && parsed.name.trim()) {
+          return parsed.name.trim()
+        }
+      }
+    } catch {
+    }
+    return 'Kruti'
+  }, [])
+
   return (
     <div className="space-y-6">
-      <section className="rounded-soft bg-gradient-to-r from-edu-teal to-edu-mint p-6 text-edu-navy shadow-soft">
-        <p className="text-sm text-edu-navy/75">Student Dashboard</p>
-        <h1 className="mt-1 text-3xl font-bold">Welcome, Kruti</h1>
-        <p className="mt-2 max-w-2xl text-sm text-edu-navy/80">
+      <section className="rounded-soft bg-gradient-to-r from-edu-navy to-edu-blue p-6 text-white shadow-soft">
+        <p className="text-sm text-white/75">Student Dashboard</p>
+        <h1 className="mt-1 text-3xl font-bold">Welcome, {studentName}</h1>
+        <p className="mt-2 max-w-2xl text-sm text-white/80">
           Track your attendance, monitor subject progress, and estimate your CGPA with real-time insights.
         </p>
       </section>
@@ -37,14 +51,6 @@ function StudentDashboard() {
         </div>
       </section>
 
-      <AlertBanner
-        tone="attention"
-        title="Profile Alert"
-        message="Your profile is visible to faculty. Keep details updated for accurate analytics."
-        actionLabel="Open Attendance"
-        actionTo="/student/attendance"
-      />
-
       <section className="rounded-soft bg-white p-5 shadow-soft">
         <h2 className="mb-4 text-lg font-semibold text-edu-navy">Profile Details</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -61,11 +67,11 @@ function StudentDashboard() {
         <section className="rounded-soft bg-white p-5 shadow-soft">
           <h2 className="text-lg font-semibold text-edu-navy">Attendance Overview</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-edu-mint/35 p-4">
+            <div className="rounded-xl bg-edu-blue/10 p-4">
               <p className="text-sm text-edu-blue">Current Attendance</p>
               <p className="text-2xl font-bold text-edu-navy">84%</p>
             </div>
-            <div className="rounded-xl bg-edu-sand/50 p-4">
+            <div className="rounded-xl bg-edu-bg p-4">
               <p className="text-sm text-edu-blue">Classes Missed</p>
               <p className="text-2xl font-bold text-edu-navy">12</p>
             </div>

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import BrandLogo from '../components/BrandLogo'
 
 const roles = [
   {
@@ -10,8 +11,14 @@ const roles = [
   {
     key: 'faculty',
     title: 'Faculty',
-    description: 'Analyze class trends, identify at-risk students, and monitor subject analytics.',
+    description: 'Analyze class trends, identify at-risk students, and monitor risk predictions.',
     bg: 'from-edu-navy to-edu-blue',
+  },
+  {
+    key: 'counsellor',
+    title: 'Counsellor',
+    description: 'Add students, manage counsellor assignments, and support at-risk learners.',
+    bg: 'from-edu-blue to-edu-teal',
   },
 ]
 
@@ -19,6 +26,7 @@ function LandingPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-8 py-4 sm:py-8">
       <section className="rounded-soft bg-white p-6 text-center shadow-soft sm:p-10">
+        <BrandLogo className="mx-auto" imageClassName="mx-auto h-36 w-auto sm:h-44" priority />
         <h1 className="text-3xl font-bold text-edu-navy sm:text-4xl">
           EduTrack – Smart Academic Performance & Engagement Tracking System
         </h1>

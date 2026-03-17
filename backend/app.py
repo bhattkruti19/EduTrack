@@ -47,7 +47,7 @@ def create_app():
     def root_status():
         return jsonify(
             {
-                "message": "EduTrack backend is running",
+                "message": "EduTrack Backend Running",
                 "api_base": "/api",
                 "database": "MongoDB",
             }

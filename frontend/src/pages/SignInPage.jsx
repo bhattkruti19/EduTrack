@@ -1,21 +1,26 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import BrandLogo from '../components/BrandLogo'
 
 function SignInPage({ role = 'student' }) {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const roleLabel = role === 'faculty' ? 'Faculty' : 'Student'
+  const roleLabel = role === 'faculty' ? 'Faculty' : role === 'counsellor' ? 'Counsellor' : 'Student'
 
   const handleSubmit = (event) => {
     event.preventDefault()
     if (!email || !password) return
+    if (role === 'counsellor') {
+      localStorage.setItem('edutrack_counsellor_profile', JSON.stringify({ name: email.split('@')[0] }))
+    }
     navigate(`/${role}/dashboard`)
   }
 
   return (
     <div className="mx-auto max-w-md py-4 sm:py-10">
       <section className="rounded-soft bg-white p-6 shadow-soft sm:p-7">
+        <BrandLogo className="mx-auto" imageClassName="mx-auto h-24 w-auto" priority />
         <h1 className="text-2xl font-bold text-edu-navy">{roleLabel} Sign In</h1>
         <p className="mt-1 text-sm text-edu-blue">UI demo only — no real authentication.</p>
 

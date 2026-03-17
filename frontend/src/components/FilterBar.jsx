@@ -1,9 +1,17 @@
-function FilterBar({ filters, onChange, branchOptions, subjectOptions, semesterOptions }) {
+function FilterBar({
+  filters,
+  onChange,
+  onApply,
+  canApply,
+  branchOptions,
+  subjectOptions,
+  semesterOptions,
+}) {
   const inputClass =
     'w-full rounded-lg border border-edu-blue/20 bg-white/90 px-3 py-2 text-sm text-edu-navy outline-none transition focus:border-edu-teal focus:ring-2 focus:ring-edu-teal/25'
 
   return (
-    <div className="grid gap-3 rounded-soft border border-white/60 bg-white/85 p-4 shadow-soft backdrop-blur-sm sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-3 rounded-2xl border border-edu-sand bg-edu-sand/70 p-4 shadow-md sm:grid-cols-2 lg:grid-cols-4">
       <select
         className={inputClass}
         value={filters.branch}
@@ -43,23 +51,14 @@ function FilterBar({ filters, onChange, branchOptions, subjectOptions, semesterO
         ))}
       </select>
 
-      <input
-        type="text"
-        value={filters.search}
-        onChange={(event) => onChange('search', event.target.value)}
-        placeholder="Search student/subject"
-        className={inputClass}
-      />
-
-      <select
-        className={inputClass}
-        value={filters.sort}
-        onChange={(event) => onChange('sort', event.target.value)}
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={!canApply}
+        className="rounded-lg bg-edu-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-edu-blue disabled:cursor-not-allowed disabled:opacity-55"
       >
-        <option value="latest">Latest</option>
-        <option value="highest-risk">Highest Risk</option>
-        <option value="lowest-risk">Lowest Risk</option>
-      </select>
+        Filter
+      </button>
     </div>
   )
 }

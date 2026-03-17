@@ -15,8 +15,8 @@ function FacultySubjectAnalytics() {
         tone="warning"
         title="Subject Risk Alert"
         message="Mathematics and Operating Systems currently require immediate faculty intervention plans."
-        actionLabel="Open Student Overview"
-        actionTo="/faculty/student-overview"
+        actionLabel="Open Risk Prediction"
+        actionTo="/faculty/predict-risk"
       />
 
       <SubjectAnalytics />
