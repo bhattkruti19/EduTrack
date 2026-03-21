@@ -1,28 +1,59 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import BrandLogo from '../components/BrandLogo'
 
-function SignInPage({ role = 'student' }) {
+const ROLE_OPTIONS = [
+  { key: 'student', label: 'Student' },
+  { key: 'faculty', label: 'Faculty' },
+  { key: 'counsellor', label: 'Counsellor' },
+]
+
+function SignInPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const roleLabel = role === 'faculty' ? 'Faculty' : role === 'counsellor' ? 'Counsellor' : 'Student'
+
+  const role = searchParams.get('role')
+  const selectedRole = ROLE_OPTIONS.some((item) => item.key === role) ? role : 'student'
+  const roleLabel = selectedRole === 'faculty' ? 'Faculty' : selectedRole === 'counsellor' ? 'Counsellor' : 'Student'
+
+  const handleRoleChange = (nextRole) => {
+    setSearchParams({ role: nextRole })
+  }
 
   const handleSubmit = (event) => {
     event.preventDefault()
     if (!email || !password) return
-    if (role === 'counsellor') {
+    if (selectedRole === 'counsellor') {
       localStorage.setItem('edutrack_counsellor_profile', JSON.stringify({ name: email.split('@')[0] }))
     }
-    navigate(`/${role}/dashboard`)
+    navigate(`/${selectedRole}/dashboard`)
   }
 
   return (
     <div className="mx-auto max-w-md py-4 sm:py-10">
       <section className="rounded-soft bg-white p-6 shadow-soft sm:p-7">
         <BrandLogo className="mx-auto" imageClassName="mx-auto h-24 w-auto" priority />
-        <h1 className="text-2xl font-bold text-edu-navy">{roleLabel} Sign In</h1>
-        <p className="mt-1 text-sm text-edu-blue">UI demo only — no real authentication.</p>
+        <h1 className="text-2xl font-bold text-edu-navy">Sign In</h1>
+        <p className="mt-1 text-sm text-edu-blue">Selected role: {roleLabel}</p>
+
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {ROLE_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => handleRoleChange(option.key)}
+              className={`rounded-lg px-2 py-2 text-sm font-medium transition ${
+                selectedRole === option.key
+                  ? 'bg-edu-teal text-white'
+                  : 'border border-edu-blue/20 bg-edu-bg text-edu-navy hover:border-edu-teal'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <label className="block space-y-1">
@@ -57,7 +88,7 @@ function SignInPage({ role = 'student' }) {
 
         <p className="mt-4 text-sm text-edu-blue">
           New user?{' '}
-          <Link to={`/${role}/signup`} className="font-semibold text-edu-navy hover:underline">
+          <Link to={`/${selectedRole}/signup`} className="font-semibold text-edu-navy hover:underline">
             Sign Up
           </Link>
         </p>

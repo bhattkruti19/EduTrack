@@ -9,7 +9,10 @@ def _attendance_collection():
 
 def ensure_attendance_indexes():
     """Create required indexes for the attendance collection."""
-    _attendance_collection().create_index([("student_id", 1), ("subject", 1)], unique=True)
+    collection = _attendance_collection()
+    collection.create_index("student_id")
+    collection.create_index("subject")
+    collection.create_index("date")
 
 
 def _serialize_attendance(document):
@@ -56,3 +59,30 @@ def update_attendance(attendance_id, payload):
         return get_attendance_by_id(attendance_id)
     except Exception:
         return None
+
+
+def _serialize_attendance_entry(document):
+    if not document:
+        return None
+
+    return {
+        "id": str(document["_id"]),
+        "student_id": document.get("student_id"),
+        "subject": document.get("subject"),
+        "date": document.get("date"),
+        "status": document.get("status"),
+    }
+
+
+def create_attendance_entries(records):
+    if not records:
+        return []
+
+    inserted = _attendance_collection().insert_many(records)
+    cursor = _attendance_collection().find({"_id": {"$in": inserted.inserted_ids}})
+    return [_serialize_attendance_entry(item) for item in cursor]
+
+
+def get_attendance_entries_by_student(student_id):
+    cursor = _attendance_collection().find({"student_id": str(student_id)}).sort("date", -1)
+    return [_serialize_attendance_entry(item) for item in cursor]

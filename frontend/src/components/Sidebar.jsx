@@ -4,7 +4,6 @@ const facultyLinks = [
   { label: 'Dashboard', to: '/faculty/dashboard' },
   { label: 'Student Data', to: '/faculty/data' },
   { label: 'Predict Risk', to: '/faculty/predict-risk' },
-  { label: 'Assign Counsellor', to: '/faculty/assign-counsellor' },
 ]
 
 const counsellorLinks = [

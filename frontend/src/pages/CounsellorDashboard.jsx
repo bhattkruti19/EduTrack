@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-
-const API_BASE = 'http://localhost:5000/api'
+import API_BASE from '../config/api'
 
 const quickLinks = [
   { label: 'Student Data', to: '/counsellor/data', gradient: 'from-edu-navy to-edu-blue' },

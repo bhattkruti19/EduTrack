@@ -1,6 +1,5 @@
 import { useState } from 'react'
-
-const API_BASE = 'http://localhost:5000/api'
+import API_BASE from '../config/api'
 
 const BRANCHES = ['CSE', 'IT', 'ECE', 'ME', 'CE', 'EEE']
 const BATCHES = ['A', 'B', 'C', 'D']

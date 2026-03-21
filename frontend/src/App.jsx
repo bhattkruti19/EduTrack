@@ -4,7 +4,6 @@ import Navbar from './components/Navbar'
 import FacultyDashboard from './pages/FacultyDashboard'
 import FacultyDataPage from './pages/FacultyDataPage'
 import RiskPredictionPage from './pages/RiskPredictionPage'
-import AssignCounsellor from './pages/AssignCounsellor'
 import AddStudent from './pages/AddStudent'
 import StudentDashboard from './pages/StudentDashboard'
 import Attendance from './pages/Attendance'
@@ -18,15 +17,15 @@ function AppContent() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/landing" element={<LandingPage />} />
-      <Route path="/login" element={<Navigate to="/landing" replace />} />
-      <Route path="/sign-in" element={<Navigate to="/landing" replace />} />
+      <Route path="/login" element={<SignInPage />} />
+      <Route path="/sign-in" element={<Navigate to="/login" replace />} />
       <Route path="/sign-up" element={<Navigate to="/landing" replace />} />
-      <Route path="/student/login" element={<SignInPage role="student" />} />
-      <Route path="/faculty/login" element={<SignInPage role="faculty" />} />
+      <Route path="/student/login" element={<Navigate to="/login?role=student" replace />} />
+      <Route path="/faculty/login" element={<Navigate to="/login?role=faculty" replace />} />
       <Route path="/student/signup" element={<SignUpPage role="student" />} />
       <Route path="/faculty/signup" element={<SignUpPage role="faculty" />} />
-      <Route path="/student/sign-in" element={<SignInPage role="student" />} />
-      <Route path="/faculty/sign-in" element={<SignInPage role="faculty" />} />
+      <Route path="/student/sign-in" element={<Navigate to="/login?role=student" replace />} />
+      <Route path="/faculty/sign-in" element={<Navigate to="/login?role=faculty" replace />} />
       <Route path="/student/sign-up" element={<SignUpPage role="student" />} />
       <Route path="/faculty/sign-up" element={<SignUpPage role="faculty" />} />
 
@@ -34,14 +33,14 @@ function AppContent() {
       <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
       <Route path="/faculty/data" element={<FacultyDataPage />} />
       <Route path="/faculty/predict-risk" element={<RiskPredictionPage />} />
-      <Route path="/faculty/assign-counsellor" element={<AssignCounsellor />} />
+      <Route path="/faculty/assign-counsellor" element={<Navigate to="/faculty/dashboard" replace />} />
       <Route path="/faculty/student-overview" element={<Navigate to="/faculty/predict-risk" replace />} />
       <Route path="/faculty/subject-analytics" element={<Navigate to="/faculty/predict-risk" replace />} />
 
       {/* ── Counsellor auth routes ── */}
-      <Route path="/counsellor/login" element={<SignInPage role="counsellor" />} />
+      <Route path="/counsellor/login" element={<Navigate to="/login?role=counsellor" replace />} />
       <Route path="/counsellor/signup" element={<SignUpPage role="counsellor" />} />
-      <Route path="/counsellor/sign-in" element={<SignInPage role="counsellor" />} />
+      <Route path="/counsellor/sign-in" element={<Navigate to="/login?role=counsellor" replace />} />
       <Route path="/counsellor/sign-up" element={<SignUpPage role="counsellor" />} />
 
       {/* ── Counsellor dashboard routes ── */}

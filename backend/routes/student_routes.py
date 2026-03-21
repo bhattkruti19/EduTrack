@@ -71,6 +71,7 @@ def create_student_route():
             "branch",
             "semester",
             "batch",
+            "counsellor_name",
         ]
         missing = [field for field in required_fields if not data.get(field)]
         if missing:
@@ -87,7 +88,7 @@ def create_student_route():
             "branch": str(data.get("branch", "")).strip(),
             "semester": normalized_semester,
             "batch": str(data.get("batch", "")).strip(),
-            "counsellor_name": str(data.get("counsellor_name") or "Unassigned").strip(),
+            "counsellor_name": str(data.get("counsellor_name", "")).strip(),
             # Keep unique indexed fields stable even when admin submits a minimal payload.
             "enrollment_id": str(data.get("enrollment_id") or f"AUTO-{normalized_student_id}").strip(),
             "year": str(data.get("year", "")).strip(),

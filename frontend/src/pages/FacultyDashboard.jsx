@@ -182,9 +182,6 @@ function FacultyDashboard() {
     <div className="space-y-6">
       <section className="rounded-soft bg-gradient-to-r from-edu-teal to-edu-mint p-5 text-edu-navy shadow-soft">
         <h1 className="text-2xl font-bold">Welcome, {facultyName}</h1>
-        <p className="mt-1 text-sm text-edu-navy/80">
-          Monitor student performance, attendance, and risk predictions from your dashboard.
-        </p>
       </section>
 
       {/* Stat cards */}
@@ -206,13 +203,7 @@ function FacultyDashboard() {
       />
 
       {/* Filtered output */}
-      {!hasAppliedFilters ? (
-        <div className="rounded-2xl border border-dashed border-edu-blue/35 bg-white/60 p-8 text-center shadow-sm">
-          <p className="text-sm text-edu-blue">
-            Select Branch, Subject, and Semester, then click Filter to view the output.
-          </p>
-        </div>
-      ) : (
+      {hasAppliedFilters ? (
         <div className="space-y-3">
           {fallbackMessage && (
             <div className="rounded-xl border border-edu-sand bg-edu-sand/45 px-4 py-2 text-sm text-edu-navy">
@@ -229,7 +220,7 @@ function FacultyDashboard() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
