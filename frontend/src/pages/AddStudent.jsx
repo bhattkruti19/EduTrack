@@ -1,8 +1,7 @@
-import { useState } from 'react'
-import API_BASE from '../config/api'
-
-const BRANCHES = ['CSE', 'IT', 'ECE', 'ME', 'CE', 'EEE']
-const BATCHES = ['A', 'B', 'C', 'D']
+import { useEffect, useState } from 'react'
+import api from '../api/api'
+import { BRANCH_OPTIONS, SEMESTER_OPTIONS, BATCH_OPTIONS } from '../config/academicOptions'
+import BulkStudentImportPanel from '../components/BulkStudentImportPanel'
 
 const emptyForm = {
   student_id: '',
@@ -17,8 +16,22 @@ const emptyForm = {
 
 export default function AddStudent() {
   const [form, setForm] = useState(emptyForm)
-  const [status, setStatus] = useState(null) // { type: 'success'|'error', message }
+  const [status, setStatus] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const [counsellorName, setCounsellorName] = useState('Unassigned')
+
+  useEffect(() => {
+    try {
+      const userRaw = localStorage.getItem('edutrack_user')
+      if (!userRaw) return
+      const user = JSON.parse(userRaw)
+      if (user?.name?.trim()) {
+        setCounsellorName(user.name.trim())
+      }
+    } catch {
+    }
+  }, [])
 
   function handleChange(e) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -37,35 +50,51 @@ export default function AddStudent() {
     setSubmitting(true)
     setStatus(null)
     try {
-      const res = await fetch(`${API_BASE}/students`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const { data } = await api.post(
+        '/api/students',
+        {
           ...form,
           semester: Number(form.semester),
-        }),
+          counsellor_name: counsellorName,
+        },
+        { timeout: 15000 },
+      )
+
+      setStatus({
+        type: 'success',
+        message: `Student "${data.student?.name}" (ID: ${data.student?.student_id}) added successfully. Login password: student123`,
       })
-      const data = await res.json()
-      if (!res.ok) {
-        setStatus({ type: 'error', message: data.error ?? 'Failed to add student.' })
-      } else {
-        setStatus({
-          type: 'success',
-          message: `Student "${data.student?.name}" (ID: ${data.student?.student_id}) added successfully.`,
-        })
-        setForm(emptyForm)
-      }
-    } catch {
-      setStatus({ type: 'error', message: 'Network error. Is the server running?' })
+      setForm(emptyForm)
+    } catch (error) {
+      const message =
+        error?.response?.data?.error ||
+        (error?.code === 'ECONNABORTED'
+          ? 'Request timed out. Check backend connection.'
+          : 'Network error. Is the server running?')
+      setStatus({ type: 'error', message })
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <BulkStudentImportPanel
+        title="Bulk Add Students"
+        importDefaults={{ counsellor_name: counsellorName }}
+        onImported={async (summary) => {
+          if (Number(summary?.createdCount || 0) > 0) {
+            setStatus({
+              type: 'success',
+              message: `${summary.createdCount} students added successfully via bulk upload. Login password: student123`,
+            })
+          }
+        }}
+      />
+
       <section className="rounded-2xl border border-edu-blue/20 bg-white p-6 shadow-soft">
         <h2 className="mb-6 text-lg font-semibold text-edu-navy">Add New Student</h2>
+        <p className="mb-4 text-sm text-edu-blue">Assigned counsellor: {counsellorName}</p>
 
         {status && (
           <div
@@ -80,65 +109,16 @@ export default function AddStudent() {
         )}
 
         <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
-
-          {/* Required fields */}
           <Field label="Student ID *" name="student_id" value={form.student_id} onChange={handleChange} placeholder="e.g. 2301CS001" />
           <Field label="Full Name *" name="name" value={form.name} onChange={handleChange} placeholder="e.g. Rahul Sharma" />
 
-          {/* Branch dropdown */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-edu-navy/80">Branch *</label>
-            <select
-              name="branch"
-              value={form.branch}
-              onChange={handleChange}
-              className={selectCls}
-            >
-              <option value="">— select branch —</option>
-              {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
+          <SelectField label="Branch *" name="branch" value={form.branch} onChange={handleChange} options={BRANCH_OPTIONS} placeholder="select branch" />
+          <SelectField label="Semester *" name="semester" value={form.semester} onChange={handleChange} options={SEMESTER_OPTIONS.map(String)} placeholder="select semester" renderOption={(v) => `Semester ${v}`} />
+          <SelectField label="Batch *" name="batch" value={form.batch} onChange={handleChange} options={BATCH_OPTIONS} placeholder="select batch" renderOption={(v) => `Batch ${v}`} />
 
-          {/* Semester */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-edu-navy/80">Semester *</label>
-            <select name="semester" value={form.semester} onChange={handleChange} className={selectCls}>
-              <option value="">— select semester —</option>
-              {[1,2,3,4,5,6,7,8].map((n) => <option key={n} value={n}>Semester {n}</option>)}
-            </select>
-          </div>
-
-          {/* Batch dropdown */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-edu-navy/80">Batch *</label>
-            <select name="batch" value={form.batch} onChange={handleChange} className={selectCls}>
-              <option value="">— select batch —</option>
-              {BATCHES.map((b) => <option key={b} value={b}>Batch {b}</option>)}
-            </select>
-          </div>
-
-          <Field
-            label="Enrollment ID"
-            name="enrollment_id"
-            value={form.enrollment_id}
-            onChange={handleChange}
-            placeholder="e.g. 23BECS001"
-          />
-          <Field
-            label="Email"
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={handleChange}
-            placeholder="student@example.com"
-          />
-          <Field
-            label="Year"
-            name="year"
-            value={form.year}
-            onChange={handleChange}
-            placeholder="e.g. 2nd Year"
-          />
+          <Field label="Enrollment ID" name="enrollment_id" value={form.enrollment_id} onChange={handleChange} placeholder="e.g. 23BECS001" />
+          <Field label="Email" name="email" type="email" value={form.email} onChange={handleChange} placeholder="student@example.com" />
+          <Field label="Year" name="year" value={form.year} onChange={handleChange} placeholder="e.g. 3rd Year" />
 
           <div className="col-span-full mt-2">
             <button
@@ -146,7 +126,7 @@ export default function AddStudent() {
               disabled={submitting}
               className="rounded-xl bg-edu-navy px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {submitting ? 'Adding Student…' : 'Add Student'}
+              {submitting ? 'Adding Student...' : 'Add Student'}
             </button>
           </div>
         </form>
@@ -157,6 +137,22 @@ export default function AddStudent() {
 
 const selectCls =
   'rounded-xl border border-edu-blue/30 bg-edu-bg px-3 py-2.5 text-sm text-edu-navy focus:border-edu-blue focus:outline-none focus:ring-2 focus:ring-edu-blue/20'
+
+function SelectField({ label, name, value, onChange, options, placeholder, renderOption }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-edu-navy/80">{label}</label>
+      <select name={name} value={value} onChange={onChange} className={selectCls}>
+        <option value="">- {placeholder} -</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {renderOption ? renderOption(opt) : opt}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
 
 function Field({ label, name, value, onChange, placeholder, type = 'text', ...rest }) {
   return (

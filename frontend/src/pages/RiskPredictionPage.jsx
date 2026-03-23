@@ -1,15 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import api from '../api/api'
+import { BRANCH_OPTIONS, SUBJECT_OPTIONS, SEMESTER_OPTIONS } from '../config/academicOptions'
 import FilterBar from '../components/risk/FilterBar'
 import RiskCard from '../components/risk/RiskCard'
 import StudentTable from '../components/risk/StudentTable'
-
-const DUMMY_STUDENTS = [
-  { id: 101, name: 'Rahul', status: 'High', reason: 'Low attendance', branch: 'CSE', subject: 'DBMS', semester: '5' },
-  { id: 102, name: 'Aman', status: 'Medium', reason: 'Low marks', branch: 'CSE', subject: 'Data Structures', semester: '4' },
-  { id: 103, name: 'Neha', status: 'Low', reason: 'Good performance', branch: 'IT', subject: 'Operating Systems', semester: '5' },
-  { id: 104, name: 'Riya', status: 'High', reason: 'Low assignment scores', branch: 'ECE', subject: 'Mathematics', semester: '3' },
-  { id: 105, name: 'Kunal', status: 'Medium', reason: 'Irregular test performance', branch: 'ME', subject: 'Computer Networks', semester: '6' },
-]
 
 const RISK_ORDER = { High: 3, Medium: 2, Low: 1 }
 
@@ -20,31 +14,93 @@ const sortOptions = [
 ]
 
 function RiskPredictionPage() {
+  const [studentData, setStudentData] = useState([])
   const [filters, setFilters] = useState({
     branch: '',
     subject: '',
     semester: '',
     sorting: 'risk-desc',
   })
-  const [studentData] = useState(DUMMY_STUDENTS)
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [studentsRes, riskRes] = await Promise.all([
+          api.get('/api/students'),
+          api.get('/api/risk'),
+        ])
+
+        const students = Array.isArray(studentsRes.data) ? studentsRes.data : []
+        const riskRows = Array.isArray(riskRes.data) ? riskRes.data : []
+
+        // Fetch attendance for each student to extract subjects
+        const merged = await Promise.all(
+          students.map(async (student) => {
+            const risk = riskRows.find((row) => String(row.student_id) === String(student.student_id))
+            try {
+              const attRes = await api.get(`/api/attendance/${student.student_id}`)
+              const attendanceRecords = Array.isArray(attRes.data) ? attRes.data : []
+              const subjects = [...new Set(
+                attendanceRecords
+                  .map((rec) => rec.subject)
+                  .filter(Boolean)
+              )]
+              return {
+                id: student.student_id,
+                name: student.name,
+                status: risk?.status || 'Low',
+                reason: risk?.reason || 'No major risk',
+                branch: student.branch || 'NA',
+                attendance_subjects: subjects,
+                semester: String(student.semester || ''),
+              }
+            } catch (_err) {
+              return {
+                id: student.student_id,
+                name: student.name,
+                status: risk?.status || 'Low',
+                reason: risk?.reason || 'No major risk',
+                branch: student.branch || 'NA',
+                attendance_subjects: [],
+                semester: String(student.semester || ''),
+              }
+            }
+          }),
+        )
+
+        setStudentData(merged)
+      } catch (_error) {
+        setStudentData([])
+      }
+    }
+
+    loadData()
+  }, [])
 
   const branchOptions = useMemo(
-    () => [...new Set(studentData.map((student) => student.branch))],
+    () => [...new Set([...BRANCH_OPTIONS, ...studentData.map((student) => student.branch).filter(Boolean)])],
     [studentData],
   )
   const subjectOptions = useMemo(
-    () => [...new Set(studentData.map((student) => student.subject))],
+    () => [
+      ...new Set([
+        ...SUBJECT_OPTIONS,
+        ...studentData
+          .flatMap((student) => student.attendance_subjects || [])
+          .filter(Boolean),
+      ]),
+    ],
     [studentData],
   )
   const semesterOptions = useMemo(
-    () => [...new Set(studentData.map((student) => student.semester))],
+    () => [...new Set([...SEMESTER_OPTIONS, ...studentData.map((student) => student.semester).filter(Boolean)])],
     [studentData],
   )
 
   const filteredStudents = useMemo(() => {
     const next = studentData.filter((student) => {
       if (filters.branch && student.branch !== filters.branch) return false
-      if (filters.subject && student.subject !== filters.subject) return false
+      if (filters.subject && !student.attendance_subjects.includes(filters.subject)) return false
       if (filters.semester && student.semester !== filters.semester) return false
       return true
     })

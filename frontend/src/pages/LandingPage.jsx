@@ -58,12 +58,14 @@ function LandingPage() {
           >
             Sign In
           </Link>
-          <Link
-            to={`/${selectedRole}/signup`}
-            className="rounded-lg border border-edu-blue/20 bg-edu-bg px-5 py-2.5 text-sm font-medium text-edu-navy transition hover:border-edu-teal"
-          >
-            Sign Up
-          </Link>
+          {selectedRole !== 'student' && (
+            <Link
+              to={`/${selectedRole}/signup`}
+              className="rounded-lg border border-edu-blue/20 bg-edu-bg px-5 py-2.5 text-sm font-medium text-edu-navy transition hover:border-edu-teal"
+            >
+              Sign Up
+            </Link>
+          )}
         </div>
       </section>
     </div>

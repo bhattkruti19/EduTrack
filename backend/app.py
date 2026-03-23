@@ -3,6 +3,7 @@ from flask_cors import CORS
 
 from config import Config
 from database.db import init_db
+from database.mysql_db import init_mysql
 from models.attendance_model import ensure_attendance_indexes
 from models.grade_model import ensure_grade_indexes
 from models.marks_model import ensure_marks_indexes
@@ -18,11 +19,14 @@ from routes.prediction_routes import prediction_bp
 from routes.resource_routes import resource_bp
 from routes.risk_routes import risk_bp
 from routes.student_routes import student_bp
+from routes.system_routes import system_bp
 
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    db_backend = app.config.get("DB_BACKEND", "mongo").lower()
 
     cors_origins = app.config.get("CORS_ORIGINS", "*")
     if isinstance(cors_origins, str) and cors_origins != "*":
@@ -30,13 +34,17 @@ def create_app():
 
     CORS(app, resources={r"/api/*": {"origins": cors_origins}}, supports_credentials=True)
 
-    init_db(app)
-    with app.app_context():
-        ensure_user_indexes()
-        ensure_student_indexes()
-        ensure_attendance_indexes()
-        ensure_grade_indexes()
-        ensure_marks_indexes()
+    if db_backend in {"mongo", "both"}:
+        init_db(app)
+        with app.app_context():
+            ensure_user_indexes()
+            ensure_student_indexes()
+            ensure_attendance_indexes()
+            ensure_grade_indexes()
+            ensure_marks_indexes()
+
+    if db_backend in {"mysql", "both"}:
+        init_mysql(app)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(student_bp)
@@ -48,6 +56,7 @@ def create_app():
     app.register_blueprint(prediction_bp)
     app.register_blueprint(event_bp)
     app.register_blueprint(resource_bp)
+    app.register_blueprint(system_bp)
 
     @app.get("/")
     def root_status():
@@ -55,7 +64,7 @@ def create_app():
             {
                 "message": "Backend Running",
                 "api_base": "/api",
-                "database": "MongoDB",
+                "database": db_backend,
             }
         )
 
@@ -75,6 +84,7 @@ def create_app():
                     "prediction": "/api/predict-cgpa",
                     "events": "/api/events",
                     "resources": "/api/resources",
+                    "system": "/api/system",
                 },
             }
         )

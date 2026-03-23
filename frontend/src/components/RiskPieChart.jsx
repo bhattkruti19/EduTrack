@@ -3,21 +3,10 @@ function RiskPieChart({ students, subjectName }) {
 
   const riskCounts = safeStudents.reduce(
     (acc, student) => {
-      const score =
-        (Number(student.assignmentMarks || 0) +
-          Number(student.labMarks || 0) +
-          Number(student.attendance || 0) +
-          Number(student.examMarks || 0) +
-          Number(student.quizMarks || 0)) /
-        5
-
-      if (score < 65) {
-        acc.high += 1
-      } else if (score < 80) {
-        acc.medium += 1
-      } else {
-        acc.low += 1
-      }
+      const status = String(student.status || '').trim().toLowerCase()
+      if (status === 'high') acc.high += 1
+      else if (status === 'medium') acc.medium += 1
+      else acc.low += 1
 
       return acc
     },

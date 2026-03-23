@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import AlertBanner from '../components/AlertBanner'
+
+const STUDENT_PREDICTED_CGPA_KEY = 'edutrack_student_predicted_cgpa'
 
 function PredictCGPA() {
   const [subjects, setSubjects] = useState([])
-  const [predicted, setPredicted] = useState(null)
+  const [predicted, setPredicted] = useState(() => localStorage.getItem(STUDENT_PREDICTED_CGPA_KEY))
 
   const isValid = useMemo(
     () => subjects.length > 0,
@@ -33,20 +34,16 @@ function PredictCGPA() {
     const totalCredits = subjects.reduce((sum, s) => sum + s.credit, 0)
     if (totalCredits === 0) {
       setPredicted('--')
+      localStorage.setItem(STUDENT_PREDICTED_CGPA_KEY, '--')
       return
     }
     const cgpa = (totalWeightedGPA / totalCredits).toFixed(2)
     setPredicted(cgpa)
+    localStorage.setItem(STUDENT_PREDICTED_CGPA_KEY, cgpa)
   }
 
   return (
     <div className="space-y-6">
-      <AlertBanner
-        tone="info"
-        title="CGPA Prediction"
-        message="Enter expected GPA (0-4) and credit hours for each subject, then click Calculate to get your predicted CGPA."
-      />
-
       <section className="rounded-soft bg-white p-5 shadow-soft">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-edu-navy">Add Subjects</h2>

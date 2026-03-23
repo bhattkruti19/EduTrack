@@ -8,6 +8,12 @@ const facultyLinks = [
 
 const counsellorLinks = [
   { label: 'Add Student', to: '/counsellor/add-student' },
+  { label: 'Manage Students', to: '/counsellor/manage-students' },
+]
+
+const adminLinks = [
+  { label: 'Add Student', to: '/admin/add-student' },
+  { label: 'Manage Students', to: '/admin/manage-students' },
 ]
 
 const studentLinks = [
@@ -47,7 +53,9 @@ function Sidebar() {
   const location = useLocation()
   const isFacultyPath = location.pathname.startsWith('/faculty')
   const isCounsellorPath = location.pathname.startsWith('/counsellor')
+  const isAdminPath = location.pathname.startsWith('/admin')
 
+  if (isAdminPath) return <NavStrip links={adminLinks} />
   if (isCounsellorPath) return <NavStrip links={counsellorLinks} />
 
   // ── Horizontal nav strip for faculty ───────────────────────────────────────

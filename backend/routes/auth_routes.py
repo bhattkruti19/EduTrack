@@ -15,7 +15,7 @@ def _generate_token(user_document):
         hours=current_app.config["JWT_ACCESS_TOKEN_EXPIRES_HOURS"]
     )
     payload = {
-        "sub": str(user_document["_id"]),
+        "sub": str(user_document.get("_id") or user_document.get("user_id") or user_document.get("id")),
         "email": user_document.get("email"),
         "role": user_document.get("role"),
         "exp": expires_at,
@@ -59,7 +59,7 @@ def token_required(route_function):
             return jsonify({"error": "User not found"}), 404
 
         g.current_user = {
-            "id": str(user_document["_id"]),
+            "id": str(user_document.get("_id") or user_document.get("user_id") or user_document.get("id")),
             "name": user_document.get("name"),
             "email": user_document.get("email"),
             "role": user_document.get("role"),
@@ -82,15 +82,29 @@ def register_user():
         if not all([name, email, password, role]):
             return jsonify({"error": "name, email, password and role are required"}), 400
 
-        if role not in {"admin", "faculty", "student", "counsellor"}:
-            return jsonify({"error": "role must be admin, faculty, student or counsellor"}), 400
+        # Students cannot self-register - only counsellors can add them
+        if role == "student":
+            return jsonify({"error": "Students cannot self-register. Students must be added by a counsellor."}), 403
+
+        if role not in {"admin", "faculty", "counsellor"}:
+            return jsonify({"error": "role must be admin, faculty, or counsellor"}), 400
 
         if find_user_by_email(email):
             return jsonify({"error": "User already exists with this email"}), 409
 
         password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        user = create_user(name=name, email=email, password_hash=password_hash, role=role)
-        return jsonify({"message": "User registered successfully", "user": user}), 201
+        user_document = create_user(name=name, email=email, password_hash=password_hash, role=role)
+        
+        # Generate token for immediate login
+        token = _generate_token(user_document)
+        user = find_user_by_id(user_document.get("_id") or user_document.get("user_id") or user_document.get("id"))
+        
+        return jsonify({
+            "message": "User registered successfully",
+            "token": token,
+            "access_token": token,
+            "user": user
+        }), 201
     except Exception as error:
         return jsonify({"error": f"Failed to register user: {str(error)}"}), 500
 
@@ -122,7 +136,7 @@ def login_user():
                 "message": "Login successful",
                 "token": token,
                 "access_token": token,
-                "user": find_user_by_id(user_document["_id"]),
+                "user": find_user_by_id(user_document.get("_id") or user_document.get("user_id") or user_document.get("id")),
             }
         )
     except Exception as error:

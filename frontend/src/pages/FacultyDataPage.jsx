@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import api from '../api/api'
 import AttendanceSection from '../components/AttendanceSection'
 import MarksSection from '../components/MarksSection'
 
 function FacultyDataPage() {
   const [mode, setMode] = useState('initial') // 'initial' | 'enter' | 'view'
+  const [studentDataVersion, setStudentDataVersion] = useState(0)
   const [attendanceRecords, setAttendanceRecords] = useState([])
   const [marksRecords, setMarksRecords] = useState({
     Quiz: [],
@@ -20,15 +22,56 @@ function FacultyDataPage() {
     return records.length > 0 ? records[records.length - 1] : null
   }
 
-  const handleAttendanceSubmit = (payload) => {
-    setAttendanceRecords((prev) => [...prev, { ...payload, savedAt: Date.now() }])
+  const handleAttendanceSubmit = async (payload) => {
+    const today = new Date().toISOString().slice(0, 10)
+    const attendanceEntries = (payload.students || []).map((student) => ({
+      student_id: String(student.id),
+      subject: payload.subject,
+      date: today,
+      status: payload.attendance?.[student.id] ? 'Present' : 'Absent',
+    }))
+
+    const response = await api.post('/api/attendance', { attendance: attendanceEntries })
+    const savedAttendance = response?.data?.attendance || []
+
+    setAttendanceRecords((prev) => [
+      ...prev,
+      {
+        ...payload,
+        savedAt: Date.now(),
+        apiSavedCount: savedAttendance.length,
+      },
+    ])
+
+    return savedAttendance
   }
 
-  const handleMarksSubmit = (type, payload) => {
-    setMarksRecords((prev) => ({
-      ...prev,
-      [type]: [...prev[type], { ...payload, savedAt: Date.now() }],
-    }))
+  const handleMarksSubmit = async (type, payload) => {
+    try {
+      const marksEntries = (payload.students || []).map((student) => ({
+        student_id: String(student.id),
+        subject: payload.subject,
+        type: type.toLowerCase(),
+        marks: payload.marks?.[student.id] ? parseFloat(payload.marks[student.id]) : null,
+      })).filter((entry) => entry.marks !== null && entry.marks !== '')
+
+      if (marksEntries.length > 0) {
+        await api.post('/api/marks', marksEntries)
+      }
+
+      setMarksRecords((prev) => ({
+        ...prev,
+        [type]: [...prev[type], { ...payload, savedAt: Date.now() }],
+      }))
+    } catch (error) {
+      console.error(`Error saving ${type} marks:`, error)
+    }
+  }
+
+  const handleStudentsImported = (summary) => {
+    if (Number(summary?.createdCount || 0) > 0) {
+      setStudentDataVersion((prev) => prev + 1)
+    }
   }
 
   return (
@@ -60,34 +103,49 @@ function FacultyDataPage() {
           >
             ← Back
           </button>
+
           <AttendanceSection
+            key={`attendance-${studentDataVersion}`}
             mode="enter"
             initialData={latestAttendance}
             onSubmitData={handleAttendanceSubmit}
+            onStudentsImported={handleStudentsImported}
           />
+
           <MarksSection
+            key={`quiz-${studentDataVersion}`}
             type="Quiz"
             mode="enter"
             initialData={latestMarksByType('Quiz')}
             onSubmitData={(payload) => handleMarksSubmit('Quiz', payload)}
+            onStudentsImported={handleStudentsImported}
           />
+
           <MarksSection
+            key={`exam-${studentDataVersion}`}
             type="Exam"
             mode="enter"
             initialData={latestMarksByType('Exam')}
             onSubmitData={(payload) => handleMarksSubmit('Exam', payload)}
+            onStudentsImported={handleStudentsImported}
           />
+
           <MarksSection
+            key={`assignment-${studentDataVersion}`}
             type="Assignment"
             mode="enter"
             initialData={latestMarksByType('Assignment')}
             onSubmitData={(payload) => handleMarksSubmit('Assignment', payload)}
+            onStudentsImported={handleStudentsImported}
           />
+
           <MarksSection
+            key={`practicals-${studentDataVersion}`}
             type="Practicals"
             mode="enter"
             initialData={latestMarksByType('Practicals')}
             onSubmitData={(payload) => handleMarksSubmit('Practicals', payload)}
+            onStudentsImported={handleStudentsImported}
           />
         </>
       )}

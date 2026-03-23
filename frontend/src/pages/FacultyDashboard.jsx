@@ -1,113 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import api from '../api/api'
+import { BRANCH_OPTIONS, SUBJECT_OPTIONS, SEMESTER_OPTIONS } from '../config/academicOptions'
 import DashboardCard from '../components/DashboardCard'
 import FilterBar from '../components/FilterBar'
 import SubjectAnalytics from '../components/SubjectAnalytics'
 import RiskPieChart from '../components/RiskPieChart'
 
-const STUDENTS = [
-  {
-    name: 'Rahul Sharma',
-    branch: 'CSE',
-    semester: 5,
-    subject: 'Data Structures',
-    attendance: 72,
-    assignmentMarks: 66,
-    labMarks: 61,
-    examMarks: 59,
-    quizMarks: 64,
-    status: 'At Risk',
-  },
-  {
-    name: 'Aman Patel',
-    branch: 'IT',
-    semester: 4,
-    subject: 'DBMS',
-    attendance: 85,
-    assignmentMarks: 81,
-    labMarks: 84,
-    examMarks: 78,
-    quizMarks: 82,
-    status: 'Normal',
-  },
-  {
-    name: 'Priya Mehta',
-    branch: 'CSE',
-    semester: 5,
-    subject: 'Operating Systems',
-    attendance: 65,
-    assignmentMarks: 63,
-    labMarks: 60,
-    examMarks: 58,
-    quizMarks: 62,
-    status: 'At Risk',
-  },
-  {
-    name: 'Sneha Joshi',
-    branch: 'ECE',
-    semester: 3,
-    subject: 'Mathematics',
-    attendance: 91,
-    assignmentMarks: 89,
-    labMarks: 87,
-    examMarks: 90,
-    quizMarks: 88,
-    status: 'Normal',
-  },
-  {
-    name: 'Rohan Gupta',
-    branch: 'ME',
-    semester: 6,
-    subject: 'Computer Networks',
-    attendance: 70,
-    assignmentMarks: 67,
-    labMarks: 69,
-    examMarks: 65,
-    quizMarks: 66,
-    status: 'At Risk',
-  },
-  {
-    name: 'Kavya Singh',
-    branch: 'IT',
-    semester: 4,
-    subject: 'DBMS',
-    attendance: 88,
-    assignmentMarks: 86,
-    labMarks: 83,
-    examMarks: 85,
-    quizMarks: 84,
-    status: 'Normal',
-  },
-  {
-    name: 'Arjun Nair',
-    branch: 'CSE',
-    semester: 5,
-    subject: 'Data Structures',
-    attendance: 58,
-    assignmentMarks: 54,
-    labMarks: 57,
-    examMarks: 52,
-    quizMarks: 56,
-    status: 'At Risk',
-  },
-  {
-    name: 'Divya Rao',
-    branch: 'ECE',
-    semester: 3,
-    subject: 'Mathematics',
-    attendance: 92,
-    assignmentMarks: 90,
-    labMarks: 91,
-    examMarks: 89,
-    quizMarks: 90,
-    status: 'Normal',
-  },
-]
-
-const BRANCH_OPTIONS   = ['CSE', 'IT', 'ECE', 'ME']
-const SUBJECT_OPTIONS  = ['Data Structures', 'DBMS', 'Operating Systems', 'Mathematics', 'Computer Networks']
-const SEMESTER_OPTIONS = ['3', '4', '5', '6']
-
 function FacultyDashboard() {
+  const [students, setStudents] = useState([])
+  const [riskRows, setRiskRows] = useState([])
+  const [loading, setLoading] = useState(true)
+
   const [filters, setFilters] = useState({
     branch: '', subject: '', semester: '',
   })
@@ -125,44 +29,114 @@ function FacultyDashboard() {
     setHasAppliedFilters(true)
   }
 
-  const atRiskCount = STUDENTS.filter((s) => s.status === 'At Risk').length
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        const [studentsRes, riskRes] = await Promise.all([
+          api.get('/api/students'),
+          api.get('/api/risk'),
+        ])
+        const baseStudents = Array.isArray(studentsRes.data) ? studentsRes.data : []
+        const risks = Array.isArray(riskRes.data) ? riskRes.data : []
 
-  const filtered = STUDENTS.filter((s) => {
+        // Fetch attendance for each student with subject details
+        const studentsWithAttendance = await Promise.all(
+          baseStudents.map(async (student) => {
+            try {
+              const attRes = await api.get(`/api/attendance/${student.student_id}`)
+              const attendanceRecords = Array.isArray(attRes.data) ? attRes.data : []
+              const totalClasses = attendanceRecords.length
+              const presentClasses = attendanceRecords.filter(
+                (rec) => String(rec.status).toLowerCase() === 'present',
+              ).length
+              const attendancePercentage =
+                totalClasses > 0 ? Math.round((presentClasses / totalClasses) * 100) : 0
+              
+              // Collect all subjects the student has attendance for
+              const subjects = [...new Set(
+                attendanceRecords
+                  .map((rec) => rec.subject)
+                  .filter(Boolean)
+              )]
+              
+              return {
+                ...student,
+                attendance_percentage: attendancePercentage,
+                attendance_subjects: subjects,
+                attendance_records: attendanceRecords,
+              }
+            } catch (_err) {
+              return { ...student, attendance_percentage: 0, attendance_subjects: [], attendance_records: [] }
+            }
+          }),
+        )
+
+        setStudents(studentsWithAttendance)
+        setRiskRows(risks)
+      } catch (_error) {
+        setStudents([])
+        setRiskRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadDashboardData()
+  }, [])
+
+  const normalizedStudents = useMemo(
+    () =>
+      students.map((item) => {
+        const risk = riskRows.find((row) => String(row.student_id) === String(item.student_id))
+        const cgpaMarks = Math.max(0, Math.min(100, Number(item.cgpa || 0) * 10))
+        return {
+          student_id: item.student_id,
+          name: item.name,
+          branch: item.branch,
+          semester: String(item.semester || ''),
+          subject: item.subject || 'General',
+          attendance_subjects: item.attendance_subjects || [],
+          attendance: Number(item.attendance_percentage || 0),
+          assignmentMarks: cgpaMarks,
+          labMarks: cgpaMarks,
+          examMarks: cgpaMarks,
+          quizMarks: cgpaMarks,
+          status: risk?.status || 'Low',
+        }
+      }),
+    [students, riskRows],
+  )
+
+  const branchOptions = useMemo(
+    () => [...new Set([...BRANCH_OPTIONS, ...normalizedStudents.map((student) => student.branch).filter(Boolean)])],
+    [normalizedStudents],
+  )
+  const subjectOptions = useMemo(
+    () => [
+      ...new Set([
+        ...SUBJECT_OPTIONS,
+        ...normalizedStudents
+          .flatMap((student) => student.attendance_subjects || [])
+          .filter(Boolean),
+      ]),
+    ],
+    [normalizedStudents],
+  )
+  const semesterOptions = useMemo(
+    () => [...new Set([...SEMESTER_OPTIONS, ...normalizedStudents.map((student) => String(student.semester)).filter(Boolean)])],
+    [normalizedStudents],
+  )
+
+  const atRiskCount = normalizedStudents.filter((s) => s.status === 'High').length
+
+  const filtered = normalizedStudents.filter((s) => {
     if (appliedFilters.branch && s.branch !== appliedFilters.branch) return false
-    if (appliedFilters.subject && s.subject !== appliedFilters.subject) return false
+    if (appliedFilters.subject && !s.attendance_subjects.includes(appliedFilters.subject)) return false
     if (appliedFilters.semester && String(s.semester) !== appliedFilters.semester) return false
     return true
   })
 
-  const fallbackFiltered = STUDENTS.filter((s) => {
-    if (appliedFilters.branch && s.branch !== appliedFilters.branch) return false
-    if (appliedFilters.semester && String(s.semester) !== appliedFilters.semester) return false
-    return true
-  })
-
-  const subjectSemesterFallback = STUDENTS.filter((s) => {
-    if (appliedFilters.subject && s.subject !== appliedFilters.subject) return false
-    if (appliedFilters.semester && String(s.semester) !== appliedFilters.semester) return false
-    return true
-  })
-
-  const studentsForOutput =
-    filtered.length > 0
-      ? filtered
-      : fallbackFiltered.length > 0
-      ? fallbackFiltered
-      : subjectSemesterFallback.length > 0
-      ? subjectSemesterFallback
-      : STUDENTS
-
-  const fallbackMessage =
-    filtered.length > 0
-      ? ''
-      : fallbackFiltered.length > 0
-      ? 'No exact match for selected subject. Showing data for selected branch and semester.'
-      : subjectSemesterFallback.length > 0
-      ? 'No exact match for selected branch. Showing data for selected subject and semester.'
-      : 'No exact match found. Showing overall class performance data.'
+  const studentsForOutput = filtered
 
   const facultyName = useMemo(() => {
     try {
@@ -184,10 +158,32 @@ function FacultyDashboard() {
         <h1 className="text-2xl font-bold">Welcome, {facultyName}</h1>
       </section>
 
+      {/* Quick Links */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Link
+          to="/faculty/manage-students"
+          className="rounded-lg border border-edu-blue/20 bg-white px-4 py-3 text-sm font-semibold text-edu-navy shadow-soft transition hover:border-edu-teal hover:bg-edu-teal/5"
+        >
+          Manage All Students
+        </Link>
+        <Link
+          to="/faculty/data"
+          className="rounded-lg border border-edu-blue/20 bg-white px-4 py-3 text-sm font-semibold text-edu-navy shadow-soft transition hover:border-edu-teal hover:bg-edu-teal/5"
+        >
+          Faculty Data
+        </Link>
+        <Link
+          to="/faculty/predict-risk"
+          className="rounded-lg border border-edu-blue/20 bg-white px-4 py-3 text-sm font-semibold text-edu-navy shadow-soft transition hover:border-edu-teal hover:bg-edu-teal/5"
+        >
+          Risk Prediction
+        </Link>
+      </div>
+
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <DashboardCard title="Total Students"   value="420"              tone="primary"   />
-        <DashboardCard title="Total Subjects"   value="18"               tone="secondary" />
+        <DashboardCard title="Total Students"   value={loading ? '...' : String(normalizedStudents.length)} tone="primary"   />
+        <DashboardCard title="Total Subjects"   value={loading ? '...' : String(subjectOptions.length)}      tone="secondary" />
         <DashboardCard title="At-Risk Students" value={String(atRiskCount)} tone="success" />
       </div>
 
@@ -197,20 +193,14 @@ function FacultyDashboard() {
         onChange={handleFilterChange}
         onApply={handleApplyFilters}
         canApply={canApply}
-        branchOptions={BRANCH_OPTIONS}
-        subjectOptions={SUBJECT_OPTIONS}
-        semesterOptions={SEMESTER_OPTIONS}
+        branchOptions={branchOptions}
+        subjectOptions={subjectOptions}
+        semesterOptions={semesterOptions}
       />
 
       {/* Filtered output */}
       {hasAppliedFilters ? (
         <div className="space-y-3">
-          {fallbackMessage && (
-            <div className="rounded-xl border border-edu-sand bg-edu-sand/45 px-4 py-2 text-sm text-edu-navy">
-              {fallbackMessage}
-            </div>
-          )}
-
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <SubjectAnalytics students={studentsForOutput} />

@@ -1,6 +1,9 @@
+import bcrypt
 from flask import Blueprint, jsonify, request
 from pymongo.errors import DuplicateKeyError
 
+from database.db import get_db
+from database.mysql_db import get_mysql_connection
 from models.student_model import (
     create_student,
     delete_student,
@@ -9,8 +12,92 @@ from models.student_model import (
     get_students_by_counsellor,
     update_student,
 )
+from models.user_model import create_user, find_user_by_email
 
 student_bp = Blueprint("students", __name__, url_prefix="/api/students")
+
+DEFAULT_STUDENT_PASSWORD = "student123"
+
+
+def _default_student_password_hash():
+    return bcrypt.hashpw(DEFAULT_STUDENT_PASSWORD.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _sync_student_login_account(name, email):
+    normalized_email = str(email or "").strip().lower()
+    normalized_name = str(name or "").strip() or "Student"
+    if not normalized_email:
+        return "Student email is required to create login credentials"
+
+    existing_user = find_user_by_email(normalized_email)
+    password_hash = _default_student_password_hash()
+
+    if existing_user:
+        if str(existing_user.get("role", "")).lower() != "student":
+            return "This email is already used by a non-student account"
+
+        if existing_user.get("_id") is not None:
+            get_db()["users"].update_one(
+                {"_id": existing_user["_id"]},
+                {"$set": {"name": normalized_name, "password": password_hash, "role": "student"}},
+            )
+            return None
+
+        user_id = existing_user.get("user_id")
+        if user_id is not None:
+            conn = get_mysql_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE users SET name = %s, password = %s, role = %s WHERE user_id = %s",
+                    (normalized_name, password_hash, "student", user_id),
+                )
+                conn.commit()
+                return None
+            finally:
+                conn.close()
+
+        return "Failed to resolve existing student user account"
+
+    create_user(name=normalized_name, email=normalized_email, password_hash=password_hash, role="student")
+    return None
+
+
+def _assert_student_login_email_available(email):
+    normalized_email = str(email or "").strip().lower()
+    existing_user = find_user_by_email(normalized_email)
+    if not existing_user:
+        return None
+    if str(existing_user.get("role", "")).lower() != "student":
+        return "This email is already used by a non-student account"
+    return None
+
+
+def _delete_student_login_account(email):
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return
+
+    existing_user = find_user_by_email(normalized_email)
+    if not existing_user:
+        return
+
+    if str(existing_user.get("role", "")).lower() != "student":
+        return
+
+    if existing_user.get("_id") is not None:
+        get_db()["users"].delete_one({"_id": existing_user["_id"]})
+        return
+
+    user_id = existing_user.get("user_id")
+    if user_id is not None:
+        conn = get_mysql_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def _to_float(value, default=0.0):
@@ -27,6 +114,41 @@ def _to_int(value, default=None):
         return default
 
 
+def _build_student_payload(data):
+    required_fields = [
+        "student_id",
+        "name",
+        "branch",
+        "semester",
+        "batch",
+        "counsellor_name",
+    ]
+    missing = [field for field in required_fields if not data.get(field)]
+    if missing:
+        return None, f"Missing required fields: {', '.join(missing)}"
+
+    normalized_student_id = str(data.get("student_id", "")).strip()
+    normalized_semester = _to_int(data.get("semester"), None)
+    if normalized_semester is None:
+        return None, "semester must be a valid integer"
+
+    payload = {
+        "student_id": normalized_student_id,
+        "name": str(data.get("name", "")).strip(),
+        "branch": str(data.get("branch", "")).strip(),
+        "semester": normalized_semester,
+        "batch": str(data.get("batch", "")).strip(),
+        "counsellor_name": str(data.get("counsellor_name", "")).strip(),
+        # Keep unique indexed fields stable even when admin submits a minimal payload.
+        "enrollment_id": str(data.get("enrollment_id") or f"AUTO-{normalized_student_id}").strip(),
+        "year": str(data.get("year", "")).strip(),
+        "email": str(data.get("email") or f"{normalized_student_id}@edutrack.local").strip().lower(),
+        "cgpa": _to_float(data.get("cgpa"), 0.0),
+        "attendance_percentage": _to_float(data.get("attendance_percentage"), 0.0),
+    }
+    return payload, None
+
+
 # Return all student documents for the frontend dashboard.
 @student_bp.route("", methods=["GET"])
 def get_students():
@@ -34,6 +156,33 @@ def get_students():
         return jsonify(get_all_students())
     except Exception as error:
         return jsonify({"error": f"Failed to fetch students: {str(error)}"}), 500
+
+
+# Return one student document by email.
+@student_bp.route("/email/<string:email>", methods=["GET"])
+def get_student_by_email(email):
+    try:
+        db = get_db()
+        student_doc = db['students'].find_one({"email": email.strip().lower()})
+        if not student_doc:
+            return jsonify({"error": "Student not found"}), 404
+        student = {
+            "id": str(student_doc.get("_id", "")),
+            "student_id": student_doc.get("student_id"),
+            "name": student_doc.get("name"),
+            "batch": student_doc.get("batch"),
+            "counsellor_name": student_doc.get("counsellor_name"),
+            "enrollment_id": student_doc.get("enrollment_id"),
+            "branch": student_doc.get("branch"),
+            "year": student_doc.get("year"),
+            "semester": student_doc.get("semester"),
+            "email": student_doc.get("email"),
+            "cgpa": float(student_doc.get("cgpa", 0.0)),
+            "attendance_percentage": float(student_doc.get("attendance_percentage", 0.0)),
+        }
+        return jsonify(student)
+    except Exception as error:
+        return jsonify({"error": f"Failed to fetch student: {str(error)}"}), 500
 
 
 # Return one student document by MongoDB ObjectId.
@@ -65,44 +214,83 @@ def get_students_by_counsellor_route(counsellor_name):
 def create_student_route():
     try:
         data = request.get_json(silent=True) or {}
-        required_fields = [
-            "student_id",
-            "name",
-            "branch",
-            "semester",
-            "batch",
-            "counsellor_name",
-        ]
-        missing = [field for field in required_fields if not data.get(field)]
-        if missing:
-            return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+        payload, validation_error = _build_student_payload(data)
+        if validation_error:
+            return jsonify({"error": validation_error}), 400
 
-        normalized_student_id = str(data.get("student_id", "")).strip()
-        normalized_semester = _to_int(data.get("semester"), None)
-        if normalized_semester is None:
-            return jsonify({"error": "semester must be a valid integer"}), 400
-
-        payload = {
-            "student_id": normalized_student_id,
-            "name": str(data.get("name", "")).strip(),
-            "branch": str(data.get("branch", "")).strip(),
-            "semester": normalized_semester,
-            "batch": str(data.get("batch", "")).strip(),
-            "counsellor_name": str(data.get("counsellor_name", "")).strip(),
-            # Keep unique indexed fields stable even when admin submits a minimal payload.
-            "enrollment_id": str(data.get("enrollment_id") or f"AUTO-{normalized_student_id}").strip(),
-            "year": str(data.get("year", "")).strip(),
-            "email": str(data.get("email") or f"{normalized_student_id}@edutrack.local").strip().lower(),
-            "cgpa": _to_float(data.get("cgpa"), 0.0),
-            "attendance_percentage": _to_float(data.get("attendance_percentage"), 0.0),
-        }
+        login_conflict = _assert_student_login_email_available(payload.get("email"))
+        if login_conflict:
+            return jsonify({"error": login_conflict}), 409
 
         student = create_student(payload)
+
+        sync_error = _sync_student_login_account(name=payload.get("name"), email=payload.get("email"))
+        if sync_error:
+            delete_student(student.get("id") or student.get("student_id"))
+            return jsonify({"error": f"Failed to create linked login account: {sync_error}"}), 500
+
         return jsonify({"message": "Student created successfully", "student": student}), 201
     except DuplicateKeyError:
         return jsonify({"error": "student_id, enrollment_id or email already exists"}), 409
     except Exception as error:
+        if "Duplicate entry" in str(error):
+            return jsonify({"error": "student_id, enrollment_id or email already exists"}), 409
         return jsonify({"error": f"Failed to create student: {str(error)}"}), 500
+
+
+@student_bp.route("/bulk", methods=["POST"])
+def create_students_bulk_route():
+    try:
+        data = request.get_json(silent=True) or {}
+        students = data.get("students")
+        if not isinstance(students, list) or len(students) == 0:
+            return jsonify({"error": "students must be a non-empty array"}), 400
+
+        created_students = []
+        errors = []
+
+        for index, row in enumerate(students, start=1):
+            payload, validation_error = _build_student_payload(row or {})
+            if validation_error:
+                errors.append({"row": index, "error": validation_error})
+                continue
+
+            login_conflict = _assert_student_login_email_available(payload.get("email"))
+            if login_conflict:
+                errors.append({"row": index, "student_id": payload.get("student_id"), "error": login_conflict})
+                continue
+
+            try:
+                created = create_student(payload)
+                sync_error = _sync_student_login_account(name=payload.get("name"), email=payload.get("email"))
+                if sync_error:
+                    delete_student(created.get("id") or created.get("student_id"))
+                    errors.append({"row": index, "student_id": payload.get("student_id"), "error": f"login sync failed: {sync_error}"})
+                else:
+                    created_students.append(created)
+            except DuplicateKeyError:
+                errors.append({"row": index, "student_id": payload.get("student_id"), "error": "duplicate student_id, enrollment_id or email"})
+            except Exception as error:
+                if "Duplicate entry" in str(error):
+                    errors.append({"row": index, "student_id": payload.get("student_id"), "error": "duplicate student_id, enrollment_id or email"})
+                else:
+                    errors.append({"row": index, "student_id": payload.get("student_id"), "error": str(error)})
+
+        status_code = 201 if len(errors) == 0 else (200 if len(created_students) > 0 else 400)
+        return (
+            jsonify(
+                {
+                    "message": "Bulk student import processed",
+                    "created_count": len(created_students),
+                    "failed_count": len(errors),
+                    "created_students": created_students,
+                    "errors": errors,
+                }
+            ),
+            status_code,
+        )
+    except Exception as error:
+        return jsonify({"error": f"Failed to import students: {str(error)}"}), 500
 
 
 # Update an existing student profile using its MongoDB ObjectId.
@@ -135,11 +323,24 @@ def update_student_route(student_id):
                 data.get("attendance_percentage"), existing_student.get("attendance_percentage", 0.0)
             )
 
+        previous_email = str(existing_student.get("email") or "").strip().lower()
         student = update_student(student_id, payload)
+
+        updated_name = payload.get("name") or existing_student.get("name")
+        updated_email = str(payload.get("email") or existing_student.get("email") or "").strip().lower()
+        sync_error = _sync_student_login_account(name=updated_name, email=updated_email)
+        if sync_error:
+            return jsonify({"error": f"Student updated but login sync failed: {sync_error}"}), 500
+
+        if previous_email and previous_email != updated_email:
+            _delete_student_login_account(previous_email)
+
         return jsonify({"message": "Student updated successfully", "student": student})
     except DuplicateKeyError:
         return jsonify({"error": "student_id, enrollment_id or email already exists"}), 409
     except Exception as error:
+        if "Duplicate entry" in str(error):
+            return jsonify({"error": "student_id, enrollment_id or email already exists"}), 409
         return jsonify({"error": f"Failed to update student: {str(error)}"}), 500
 
 
@@ -165,8 +366,15 @@ def update_student_counsellor_route(student_id):
 @student_bp.route("/<string:student_id>", methods=["DELETE"])
 def delete_student_route(student_id):
     try:
+        existing_student = get_student_by_identifier(student_id)
+        if not existing_student:
+            return jsonify({"error": "Student not found"}), 404
+
+        student_email = str(existing_student.get("email") or "").strip().lower()
         if not delete_student(student_id):
             return jsonify({"error": "Student not found"}), 404
+
+        _delete_student_login_account(student_email)
         return jsonify({"message": "Student deleted successfully"})
     except Exception as error:
         return jsonify({"error": f"Failed to delete student: {str(error)}"}), 500

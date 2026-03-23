@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import api from '../api/api'
+import { BRANCH_OPTIONS, SUBJECT_OPTIONS, SEMESTER_OPTIONS } from '../config/academicOptions'
+import BulkStudentImportPanel from './BulkStudentImportPanel'
 
 const BASE_STUDENTS = [
   { id: '101', name: 'Rahul Sharma' },
@@ -8,10 +11,6 @@ const BASE_STUDENTS = [
   { id: '105', name: 'Arjun Nair' },
 ]
 
-const BRANCH_OPTIONS   = ['CSE', 'IT', 'ECE', 'ME']
-const SUBJECT_OPTIONS  = ['Data Structures', 'DBMS', 'Operating Systems', 'Mathematics', 'Computer Networks']
-const SEMESTER_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8']
-
 const ACCENT_COLORS = {
   Quiz:       '#2FA4A9',
   Exam:       '#4E98A2',
@@ -19,7 +18,7 @@ const ACCENT_COLORS = {
   Practicals: '#215D87',
 }
 
-function MarksSection({ type, mode = 'enter', initialData = null, records = [], onSubmitData }) {
+function MarksSection({ type, mode = 'enter', initialData = null, records = [], onSubmitData, onStudentsImported }) {
   const isViewMode = mode === 'view'
   const sourceRecords = records.length > 0 ? records : initialData ? [initialData] : []
   const [open, setOpen] = useState(isViewMode)
@@ -27,6 +26,7 @@ function MarksSection({ type, mode = 'enter', initialData = null, records = [], 
   const [subject, setSubject] = useState(isViewMode ? '' : initialData?.subject ?? '')
   const [semester, setSemester] = useState(isViewMode ? '' : initialData?.semester ?? '')
   const [outOfMarks, setOutOfMarks] = useState(initialData?.outOfMarks ?? '')
+  const [databaseStudents, setDatabaseStudents] = useState([])
   const [students, setStudents] = useState(initialData?.students ?? BASE_STUDENTS)
   const [marks, setMarks] = useState(
     initialData?.marks || Object.fromEntries(BASE_STUDENTS.map((student) => [student.id, ''])),
@@ -35,6 +35,44 @@ function MarksSection({ type, mode = 'enter', initialData = null, records = [], 
 
   const allSelected = branch && subject && semester
   const accent = ACCENT_COLORS[type] || '#2FA4A9'
+
+  // Fetch students from API on mount
+  useEffect(() => {
+    const loadStudents = async () => {
+      try {
+        const response = await api.get('/api/students')
+        const dbStudents = Array.isArray(response?.data)
+          ? response.data.map((student) => ({
+              id: String(student.student_id),
+              name: student.name || String(student.student_id),
+              branch: student.branch,
+              semester: String(student.semester || ''),
+            }))
+          : []
+
+        if (dbStudents.length > 0) {
+          setDatabaseStudents(dbStudents)
+          setStudents(dbStudents)
+          setMarks((prev) => {
+            const next = { ...prev }
+            dbStudents.forEach((student) => {
+              if (typeof next[student.id] === 'undefined') {
+                next[student.id] = ''
+              }
+            })
+            return next
+          })
+        }
+      } catch (_error) {
+        // Keep local students when API is unavailable
+      }
+    }
+
+    loadStudents()
+  }, [])
+
+  const [viewModeMarks, setViewModeMarks] = useState(null)
+  const [showResult, setShowResult] = useState(false)
 
   const matchedRecord = useMemo(() => {
     if (!isViewMode || sourceRecords.length === 0) return null
@@ -47,10 +85,61 @@ function MarksSection({ type, mode = 'enter', initialData = null, records = [], 
     }) || null
   }, [isViewMode, sourceRecords, branch, subject, semester])
 
-  const displayedStudents = isViewMode ? matchedRecord?.students || [] : students
-  const displayedMarks = isViewMode ? matchedRecord?.marks || {} : marks
+  useEffect(() => {
+    if (!isViewMode) return
+    setShowResult(false)
+  }, [branch, subject, semester, isViewMode])
+
+  // Fetch marks from backend when viewing
+  useEffect(() => {
+    if (!isViewMode || !showResult || databaseStudents.length === 0) {
+      setViewModeMarks(null)
+      return
+    }
+
+    const fetchViewModeMarks = async () => {
+      try {
+        const allMarksData = await Promise.all(
+          databaseStudents.map(async (student) => {
+            try {
+              const marksRes = await api.get(`/api/marks/${student.id}`)
+              return Array.isArray(marksRes.data) ? marksRes.data : []
+            } catch {
+              return []
+            }
+          }),
+        )
+
+        const flattened = allMarksData.flat()
+        const normalizedSubject = String(subject || '').trim().toLowerCase()
+        const normalizedType = type.toLowerCase()
+        const forSubjectAndType = flattened.filter(
+          (rec) =>
+            String(rec?.subject || '').trim().toLowerCase() === normalizedSubject &&
+            String(rec?.type || '').trim().toLowerCase() === normalizedType,
+        )
+
+        const marksById = {}
+        forSubjectAndType.forEach((rec) => {
+          const studentId = String(rec?.student_id || '').trim()
+          if (studentId) {
+            marksById[studentId] = rec?.marks || 0
+          }
+        })
+
+        setViewModeMarks(marksById)
+      } catch (_error) {
+        setViewModeMarks({})
+      }
+    }
+
+    fetchViewModeMarks()
+  }, [isViewMode, showResult, databaseStudents, subject, type])
+
+  const displayedStudents = isViewMode && showResult ? databaseStudents : students
+  const displayedMarks = isViewMode && viewModeMarks ? viewModeMarks : (isViewMode ? matchedRecord?.marks || {} : marks)
   const displayedOutOfMarks = isViewMode ? matchedRecord?.outOfMarks ?? '' : outOfMarks
-  const shouldShowTable = isViewMode ? Boolean(matchedRecord) : allSelected
+  const shouldShowTable = isViewMode ? showResult : allSelected
 
   const handleChange = (id, value) => {
     if (isViewMode) return
@@ -148,6 +237,33 @@ function MarksSection({ type, mode = 'enter', initialData = null, records = [], 
               </select>
             </div>
           </div>
+
+          {isViewMode && branch && subject && semester && (
+            <div className="mb-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowResult(!showResult)}
+                className="rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-85"
+                style={{ backgroundColor: accent }}
+              >
+                {showResult ? '− Hide' : '+ Show'}
+              </button>
+            </div>
+          )}
+
+          {!isViewMode && allSelected && (
+            <BulkStudentImportPanel
+              title={`Bulk Student Import for ${type}`}
+              className="mb-5"
+              importDefaults={{
+                branch: branch || 'General',
+                semester: semester || 1,
+                batch: 'A',
+                counsellor_name: 'Unassigned',
+              }}
+              onImported={onStudentsImported}
+            />
+          )}
 
           {!shouldShowTable ? (
             <div className="rounded-xl border border-dashed border-edu-blue/30 bg-edu-sand/20 p-6 text-center text-sm text-edu-blue">
